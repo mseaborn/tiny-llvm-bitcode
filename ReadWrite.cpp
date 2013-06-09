@@ -31,7 +31,7 @@ public:
     char Buf[101] = "";
     int Got = fscanf(FH, "%lli # %100s", &Val, Buf);
     if (Got != 2 || strcmp(Buf, Desc) != 0) {
-      errs() << "Expected " << Desc << " but got " << Buf << "\n";
+      errs() << "Expected \"" << Desc << "\" but got \"" << Buf << "\"\n";
       report_fatal_error("Read mismatch");
     }
     return Val;
@@ -46,22 +46,62 @@ namespace Opcodes {
     TYPE_I8,
     TYPE_I16,
     TYPE_I64,
+    TYPE_VOID,
     TYPE_FLOAT,
     TYPE_DOUBLE,
   };
 
   enum Opcodes {
-    INST_RET,
+    INST_RET_VOID,
+    INST_RET_VALUE,
   };
 };
 
 
 void WriteType(OutputStream *Stream, Type *Ty) {
-  assert(Ty->isIntegerTy(32));
+  uint32_t TypeVal;
+  switch (Ty->getTypeID()) {
+    case Type::VoidTyID:
+      TypeVal = Opcodes::TYPE_VOID;
+      break;
+    case Type::FloatTyID:
+      TypeVal = Opcodes::TYPE_FLOAT;
+      break;
+    case Type::DoubleTyID:
+      TypeVal = Opcodes::TYPE_DOUBLE;
+      break;
+    case Type::IntegerTyID:
+      switch (Ty->getIntegerBitWidth()) {
+        case 1: TypeVal = Opcodes::TYPE_I1; break;
+        case 8: TypeVal = Opcodes::TYPE_I8; break;
+        case 16: TypeVal = Opcodes::TYPE_I16; break;
+        case 32: TypeVal = Opcodes::TYPE_I32; break;
+        case 64: TypeVal = Opcodes::TYPE_I64; break;
+        default:
+          report_fatal_error("Disallowed integer size");
+      }
+      break;
+    default:
+      errs() << "Type: " << *Ty << "\n";
+      report_fatal_error("Disallowed type");
+  }
+  Stream->writeInt(TypeVal, "type");
 }
 
 Type *ReadType(LLVMContext &Context, InputStream *Stream) {
-  return IntegerType::get(Context, 32);
+  uint32_t TypeVal = Stream->readInt("type");
+  switch (TypeVal) {
+    case Opcodes::TYPE_VOID: return Type::getVoidTy(Context);
+    case Opcodes::TYPE_I1: return IntegerType::get(Context, 1);
+    case Opcodes::TYPE_I8: return IntegerType::get(Context, 8);
+    case Opcodes::TYPE_I16: return IntegerType::get(Context, 16);
+    case Opcodes::TYPE_I32: return IntegerType::get(Context, 32);
+    case Opcodes::TYPE_I64: return IntegerType::get(Context, 64);
+    case Opcodes::TYPE_FLOAT: return Type::getFloatTy(Context);
+    case Opcodes::TYPE_DOUBLE: return Type::getDoubleTy(Context);
+    default:
+      report_fatal_error("Bad type ID");
+  }
 }
 
 
@@ -119,8 +159,12 @@ void WriteFunction(OutputStream *Stream, Function *Func) {
       switch (Inst->getOpcode()) {
         case Instruction::Ret: {
           ReturnInst *Ret = cast<ReturnInst>(Inst);
-          Stream->writeInt(Opcodes::INST_RET, "opcode");
-          Stream->writeInt(ValueMap[Ret->getReturnValue()], "val");
+          if (Ret->getReturnValue()) {
+            Stream->writeInt(Opcodes::INST_RET_VALUE, "opcode");
+            Stream->writeInt(ValueMap[Ret->getReturnValue()], "val");
+          } else {
+            Stream->writeInt(Opcodes::INST_RET_VOID, "opcode");
+          }
           break;
         }
       }
@@ -148,8 +192,21 @@ void ReadFunction(InputStream *Stream, Function *Func) {
   BasicBlock *CurrentBB = BasicBlocks[0];
   for (;;) {
     uint32_t Opcode = Stream->readInt("opcode");
-    Value *RetVal = ValueList[Stream->readInt("val")];
-    ReturnInst *Ret = ReturnInst::Create(Func->getContext(), RetVal, CurrentBB);
+    switch (Opcode) {
+      case Opcodes::INST_RET_VALUE: {
+        Value *RetVal = ValueList[Stream->readInt("val")];
+        ReturnInst *Ret = ReturnInst::Create(Func->getContext(), RetVal,
+                                             CurrentBB);
+        break;
+      }
+      case Opcodes::INST_RET_VOID: {
+        ReturnInst *Ret = ReturnInst::Create(Func->getContext(),
+                                             CurrentBB);
+        break;
+      }
+      default:
+        report_fatal_error("Unrecognized instruction opcode");
+    }
 
     CurrentBBIndex++;
     if (CurrentBBIndex == BBCount)

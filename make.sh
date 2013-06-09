@@ -12,7 +12,7 @@ llvm_config=~/devel/nacl-git3/native_client/toolchain/pnacl_linux_x86/host_x86_6
 
 mkdir -p out
 
-cflags="$($llvm_config --cxxflags) -g"
+cflags="$($llvm_config --cxxflags) -g -Wall"
 $ccache g++ $cflags -c ReadWrite.cpp -o out/ReadWrite.o
 $ccache g++ $cflags -c Freeze.cpp -o out/Freeze.o
 $ccache g++ $cflags -c Thaw.cpp -o out/Thaw.o

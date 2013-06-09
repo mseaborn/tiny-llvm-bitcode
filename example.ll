@@ -23,3 +23,9 @@ define void @store(i32 %ptr, i32 %val) {
   store i32 %val, i32* %ptr.p
   ret void
 }
+
+define void @branch() {
+  br label %bb
+bb:
+  ret void
+}

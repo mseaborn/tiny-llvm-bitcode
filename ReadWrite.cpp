@@ -56,6 +56,8 @@ namespace Opcodes {
     INST_RET_VALUE,
     INST_LOAD,
     INST_STORE,
+    INST_BR_UNCOND,
+    INST_BR_COND,
   };
 };
 
@@ -133,9 +135,11 @@ class FunctionWriter {
   OutputStream *Stream;
   Function *Func;
   DenseMap<Value *, uint32_t> ValueMap;
+  DenseMap<BasicBlock *, uint32_t> BasicBlockMap;
 
   void computeValueIndexes();
   void writeOperand(Value *Val);
+  void writeBasicBlockOperand(BasicBlock *BB);
   void writeInstruction(Instruction *Inst);
 
 public:
@@ -155,19 +159,21 @@ static bool instructionHasValueId(Instruction *Inst) {
 }
 
 void FunctionWriter::computeValueIndexes() {
-  uint32_t NextIndex = 0;
+  uint32_t NextBasicBlockID = 0;
+  uint32_t NextValueID = 0;
 
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
        Arg != E; ++Arg) {
-    ValueMap[Arg] = NextIndex++;
+    ValueMap[Arg] = NextValueID++;
   }
 
   for (Function::iterator BB = Func->begin(), E = Func->end();
        BB != E; ++BB) {
+    BasicBlockMap[BB] = NextBasicBlockID++;
     for (BasicBlock::iterator Inst = BB->begin(), E = BB->end();
          Inst != E; ++Inst) {
       if (instructionHasValueId(Inst)) {
-        ValueMap[Inst] = NextIndex++;
+        ValueMap[Inst] = NextValueID++;
       }
     }
   }
@@ -181,6 +187,11 @@ void FunctionWriter::writeOperand(Value *Val) {
   }
   assert(ValueMap.count(Val) == 1);
   Stream->writeInt(ValueMap[Val], "val");
+}
+
+void FunctionWriter::writeBasicBlockOperand(BasicBlock *BB) {
+  assert(BasicBlockMap.count(BB) == 1);
+  Stream->writeInt(BasicBlockMap[BB], "basic_block_ref");
 }
 
 void FunctionWriter::writeInstruction(Instruction *Inst) {
@@ -207,6 +218,12 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       Stream->writeInt(Opcodes::INST_STORE, "opcode");
       writeOperand(Store->getOperand(0));
       writeOperand(Store->getOperand(1));
+      break;
+    }
+    case Instruction::Br: {
+      BranchInst *Br = cast<BranchInst>(Inst);
+      Stream->writeInt(Opcodes::INST_BR_UNCOND, "opcode");
+      writeBasicBlockOperand(Br->getSuccessor(0));
       break;
     }
     case Instruction::IntToPtr:
@@ -239,6 +256,7 @@ class FunctionReader {
   SmallVector<Value *, 64> ValueList;
 
   Value *readOperand();
+  BasicBlock *readBasicBlockOperand();
 
 public:
   FunctionReader(InputStream *Stream, Function *Func):
@@ -251,6 +269,12 @@ Value *FunctionReader::readOperand() {
   uint32_t ID = Stream->readInt("val");
   assert(ID < ValueList.size());
   return ValueList[ID];
+}
+
+BasicBlock *FunctionReader::readBasicBlockOperand() {
+  uint32_t ID = Stream->readInt("basic_block_ref");
+  assert(ID < BasicBlocks.size());
+  return BasicBlocks[ID];
 }
 
 void FunctionReader::read() {
@@ -294,6 +318,11 @@ void FunctionReader::read() {
         Value *Ptr2 = new IntToPtrInst(Ptr, Val->getType()->getPointerTo(),
                                        "", CurrentBB);
         NewInst = new StoreInst(Val, Ptr2, CurrentBB);
+        break;
+      }
+      case Opcodes::INST_BR_UNCOND: {
+        BasicBlock *BB = readBasicBlockOperand();
+        NewInst = BranchInst::Create(BB, CurrentBB);
         break;
       }
       default:

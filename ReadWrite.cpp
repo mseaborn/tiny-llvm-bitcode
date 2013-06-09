@@ -231,16 +231,35 @@ void FunctionWriter::write() {
   }
 }
 
-void ReadFunction(InputStream *Stream, Function *Func) {
-  uint32_t BBCount = Stream->readInt("basic_block_count");
+class FunctionReader {
+  InputStream *Stream;
+  Function *Func;
+  uint32_t BBCount;
   SmallVector<BasicBlock *, 10> BasicBlocks;
-  BasicBlocks.reserve(BBCount);
+  SmallVector<Value *, 64> ValueList;
+
+  Value *readOperand();
+
+public:
+  FunctionReader(InputStream *Stream, Function *Func):
+    Stream(Stream), Func(Func) {}
+
+  void read();
+};
+
+Value *FunctionReader::readOperand() {
+  uint32_t ID = Stream->readInt("val");
+  assert(ID < ValueList.size());
+  return ValueList[ID];
+}
+
+void FunctionReader::read() {
+  BBCount = Stream->readInt("basic_block_count");
   assert(BBCount > 0);
+  BasicBlocks.reserve(BBCount);
   for (unsigned I = 0; I < BBCount; ++I) {
     BasicBlocks.push_back(BasicBlock::Create(Func->getContext(), "", Func));
   }
-
-  SmallVector<Value *, 64> ValueList;
 
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
        Arg != E; ++Arg) {
@@ -254,7 +273,7 @@ void ReadFunction(InputStream *Stream, Function *Func) {
     Instruction *NewInst = NULL;
     switch (Opcode) {
       case Opcodes::INST_RET_VALUE: {
-        Value *RetVal = ValueList[Stream->readInt("val")];
+        Value *RetVal = readOperand();
         NewInst = ReturnInst::Create(Func->getContext(), RetVal, CurrentBB);
         break;
       }
@@ -264,14 +283,14 @@ void ReadFunction(InputStream *Stream, Function *Func) {
       }
       case Opcodes::INST_LOAD: {
         Type *Ty = ReadType(Func->getContext(), Stream);
-        Value *Ptr = ValueList[Stream->readInt("val")];
+        Value *Ptr = readOperand();
         Value *Ptr2 = new IntToPtrInst(Ptr, Ty->getPointerTo(), "", CurrentBB);
         NewInst = new LoadInst(Ptr2, "", CurrentBB);
         break;
       }
       case Opcodes::INST_STORE: {
-        Value *Val = ValueList[Stream->readInt("val")];
-        Value *Ptr = ValueList[Stream->readInt("val")];
+        Value *Val = readOperand();
+        Value *Ptr = readOperand();
         Value *Ptr2 = new IntToPtrInst(Ptr, Val->getType()->getPointerTo(),
                                        "", CurrentBB);
         NewInst = new StoreInst(Val, Ptr2, CurrentBB);
@@ -311,7 +330,7 @@ void ReadModule(InputStream *Stream, Module *M) {
     FuncList.push_back(ReadFunctionDecl(Stream, M));
   }
   for (unsigned I = 0; I < FuncCount; ++I) {
-    ReadFunction(Stream, FuncList[I]);
+    FunctionReader(Stream, FuncList[I]).read();
   }
 }
 

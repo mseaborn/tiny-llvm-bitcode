@@ -37,3 +37,15 @@ iftrue:
 iffalse:
   ret void
 }
+
+define i16 @forward_ref(i32 %ptr) {
+  br label %bb1
+bb2:
+  ret i16 %val
+  ; Test multiple references.
+  ret i16 %val
+bb1:
+  %ptr.p = inttoptr i32 %ptr to i16*
+  %val = load i16* %ptr.p
+  br label %bb2
+}

@@ -19,6 +19,9 @@ public:
   void writeInt(int64_t Val, const char *Desc) {
     fprintf(FH, "%lli # %s\n", (long long) Val, Desc);
   }
+  void writeMarker(const char *Desc) {
+    writeInt(0, Desc);
+  }
 };
 
 class InputStream {
@@ -35,6 +38,9 @@ public:
       report_fatal_error("Read mismatch");
     }
     return Val;
+  }
+  void readMarker(const char *Desc) {
+    readInt(Desc);
   }
 };
 
@@ -136,6 +142,7 @@ class FunctionWriter {
   Function *Func;
   DenseMap<Value *, uint32_t> ValueMap;
   DenseMap<BasicBlock *, uint32_t> BasicBlockMap;
+  uint32_t CurrentValueID;
 
   void computeValueIndexes();
   void writeOperand(Value *Val);
@@ -186,7 +193,13 @@ void FunctionWriter::writeOperand(Value *Val) {
     }
   }
   assert(ValueMap.count(Val) == 1);
-  Stream->writeInt(ValueMap[Val], "val");
+  uint32_t ID = ValueMap[Val];
+  Stream->writeInt(ID, "val");
+  if (ID >= CurrentValueID) {
+    // Forward reference:  write type as well.
+    Stream->writeMarker("fwd_ref");
+    WriteType(Stream, Val->getType());
+  }
 }
 
 void FunctionWriter::writeBasicBlockOperand(BasicBlock *BB) {
@@ -244,13 +257,20 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
 }
 
 void FunctionWriter::write() {
+  Stream->writeMarker("function_def_start");
   Stream->writeInt(Func->getBasicBlockList().size(), "basic_block_count");
   computeValueIndexes();
+
+  CurrentValueID = Func->getFunctionType()->getNumParams();
   for (Function::iterator BB = Func->begin(), E = Func->end();
        BB != E; ++BB) {
     for (BasicBlock::iterator Inst = BB->begin(), E = BB->end();
          Inst != E; ++Inst) {
       writeInstruction(Inst);
+      if (instructionHasValueId(Inst)) {
+        assert(CurrentValueID == ValueMap[Inst]);
+        CurrentValueID++;
+      }
     }
   }
 }
@@ -261,6 +281,7 @@ class FunctionReader {
   uint32_t BBCount;
   SmallVector<BasicBlock *, 10> BasicBlocks;
   SmallVector<Value *, 64> ValueList;
+  uint32_t CurrentValueID;
 
   Value *readOperand();
   BasicBlock *readBasicBlockOperand();
@@ -274,8 +295,24 @@ public:
 
 Value *FunctionReader::readOperand() {
   uint32_t ID = Stream->readInt("val");
-  assert(ID < ValueList.size());
-  return ValueList[ID];
+  if (ID < CurrentValueID) {
+    Value *V = ValueList[ID];
+    assert(V);
+    return V;
+  }
+
+  if (ID >= ValueList.size())
+    ValueList.resize(ID + 1);
+
+  // Forward reference:  create new placeholder if necessary.
+  Stream->readMarker("fwd_ref");
+  Type *Ty = ReadType(Func->getContext(), Stream);
+  if (Value *V = ValueList[ID])
+    return V;
+  Value *Placeholder = new Argument(Ty);
+  assert(!ValueList[ID]);
+  ValueList[ID] = Placeholder;
+  return Placeholder;
 }
 
 BasicBlock *FunctionReader::readBasicBlockOperand() {
@@ -285,6 +322,7 @@ BasicBlock *FunctionReader::readBasicBlockOperand() {
 }
 
 void FunctionReader::read() {
+  Stream->readMarker("function_def_start");
   BBCount = Stream->readInt("basic_block_count");
   assert(BBCount > 0);
   BasicBlocks.reserve(BBCount);
@@ -299,6 +337,7 @@ void FunctionReader::read() {
 
   unsigned CurrentBBIndex = 0;
   BasicBlock *CurrentBB = BasicBlocks[0];
+  CurrentValueID = ValueList.size();
   for (;;) {
     uint32_t Opcode = Stream->readInt("opcode");
     Instruction *NewInst = NULL;
@@ -349,7 +388,15 @@ void FunctionReader::read() {
         break;
       CurrentBB = BasicBlocks[CurrentBBIndex];
     } else if (instructionHasValueId(NewInst)) {
-      ValueList.push_back(NewInst);
+      if (CurrentValueID >= ValueList.size())
+        ValueList.resize(CurrentValueID + 1);
+      if (Value *Placeholder = ValueList[CurrentValueID]) {
+        // Resolve placeholder value.
+        Placeholder->replaceAllUsesWith(NewInst);
+        delete Placeholder;
+      }
+      ValueList[CurrentValueID] = NewInst;
+      CurrentValueID++;
     }
   }
 }

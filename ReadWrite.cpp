@@ -54,6 +54,7 @@ namespace Opcodes {
   enum Opcodes {
     INST_RET_VOID,
     INST_RET_VALUE,
+    INST_LOAD,
     INST_STORE,
   };
 };
@@ -189,6 +190,13 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       }
       break;
     }
+    case Instruction::Load: {
+      LoadInst *Load = cast<LoadInst>(Inst);
+      Stream->writeInt(Opcodes::INST_LOAD, "opcode");
+      WriteType(Stream, Load->getType());
+      writeOperand(Load->getPointerOperand());
+      break;
+    }
     case Instruction::Store: {
       StoreInst *Store = cast<StoreInst>(Inst);
       Stream->writeInt(Opcodes::INST_STORE, "opcode");
@@ -247,6 +255,13 @@ void ReadFunction(InputStream *Stream, Function *Func) {
       }
       case Opcodes::INST_RET_VOID: {
         NewInst = ReturnInst::Create(Func->getContext(), CurrentBB);
+        break;
+      }
+      case Opcodes::INST_LOAD: {
+        Type *Ty = ReadType(Func->getContext(), Stream);
+        Value *Ptr = ValueList[Stream->readInt("val")];
+        Value *Ptr2 = new IntToPtrInst(Ptr, Ty->getPointerTo(), "", CurrentBB);
+        NewInst = new LoadInst(Ptr2, "", CurrentBB);
         break;
       }
       case Opcodes::INST_STORE: {

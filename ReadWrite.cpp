@@ -54,6 +54,7 @@ namespace Opcodes {
   enum Opcodes {
     INST_RET_VOID,
     INST_RET_VALUE,
+    INST_STORE,
   };
 };
 
@@ -127,10 +128,23 @@ Function *ReadFunctionDecl(InputStream *Stream, Module *M) {
 }
 
 
-void WriteFunction(OutputStream *Stream, Function *Func) {
-  Stream->writeInt(Func->getBasicBlockList().size(), "basic_block_count");
-
+class FunctionWriter {
+  OutputStream *Stream;
+  Function *Func;
   DenseMap<Value *, uint32_t> ValueMap;
+
+  void computeValueIndexes();
+  void writeOperand(Value *Val);
+  void writeInstruction(Instruction *Inst);
+
+public:
+  FunctionWriter(OutputStream *Stream, Function *Func):
+    Stream(Stream), Func(Func) {}
+
+  void write();
+};
+
+void FunctionWriter::computeValueIndexes() {
   uint32_t NextIndex = 0;
 
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
@@ -151,23 +165,55 @@ void WriteFunction(OutputStream *Stream, Function *Func) {
       }
     }
   }
+}
 
+void FunctionWriter::writeOperand(Value *Val) {
+  if (Val->getType()->isPointerTy()) {
+    if (IntToPtrInst *Cast = dyn_cast<IntToPtrInst>(Val)) {
+      Val = Cast->getOperand(0);
+    }
+  }
+  assert(ValueMap.count(Val) == 1);
+  Stream->writeInt(ValueMap[Val], "val");
+}
+
+void FunctionWriter::writeInstruction(Instruction *Inst) {
+  switch (Inst->getOpcode()) {
+    case Instruction::Ret: {
+      ReturnInst *Ret = cast<ReturnInst>(Inst);
+      if (Ret->getReturnValue()) {
+        Stream->writeInt(Opcodes::INST_RET_VALUE, "opcode");
+        writeOperand(Ret->getReturnValue());
+      } else {
+        Stream->writeInt(Opcodes::INST_RET_VOID, "opcode");
+      }
+      break;
+    }
+    case Instruction::Store: {
+      StoreInst *Store = cast<StoreInst>(Inst);
+      Stream->writeInt(Opcodes::INST_STORE, "opcode");
+      writeOperand(Store->getOperand(0));
+      writeOperand(Store->getOperand(1));
+      break;
+    }
+    case Instruction::IntToPtr:
+    case Instruction::PtrToInt:
+      // These casts are implicit.
+      break;
+    default:
+      errs() << "Instruction: " << *Inst << "\n";
+      report_fatal_error("Unhandled instruction type");
+  }
+}
+
+void FunctionWriter::write() {
+  Stream->writeInt(Func->getBasicBlockList().size(), "basic_block_count");
+  computeValueIndexes();
   for (Function::iterator BB = Func->begin(), E = Func->end();
        BB != E; ++BB) {
     for (BasicBlock::iterator Inst = BB->begin(), E = BB->end();
          Inst != E; ++Inst) {
-      switch (Inst->getOpcode()) {
-        case Instruction::Ret: {
-          ReturnInst *Ret = cast<ReturnInst>(Inst);
-          if (Ret->getReturnValue()) {
-            Stream->writeInt(Opcodes::INST_RET_VALUE, "opcode");
-            Stream->writeInt(ValueMap[Ret->getReturnValue()], "val");
-          } else {
-            Stream->writeInt(Opcodes::INST_RET_VOID, "opcode");
-          }
-          break;
-        }
-      }
+      writeInstruction(Inst);
     }
   }
 }
@@ -192,26 +238,35 @@ void ReadFunction(InputStream *Stream, Function *Func) {
   BasicBlock *CurrentBB = BasicBlocks[0];
   for (;;) {
     uint32_t Opcode = Stream->readInt("opcode");
+    Instruction *NewInst = NULL;
     switch (Opcode) {
       case Opcodes::INST_RET_VALUE: {
         Value *RetVal = ValueList[Stream->readInt("val")];
-        ReturnInst *Ret = ReturnInst::Create(Func->getContext(), RetVal,
-                                             CurrentBB);
+        NewInst = ReturnInst::Create(Func->getContext(), RetVal, CurrentBB);
         break;
       }
       case Opcodes::INST_RET_VOID: {
-        ReturnInst *Ret = ReturnInst::Create(Func->getContext(),
-                                             CurrentBB);
+        NewInst = ReturnInst::Create(Func->getContext(), CurrentBB);
+        break;
+      }
+      case Opcodes::INST_STORE: {
+        Value *Val = ValueList[Stream->readInt("val")];
+        Value *Ptr = ValueList[Stream->readInt("val")];
+        Value *Ptr2 = new IntToPtrInst(Ptr, Val->getType()->getPointerTo(),
+                                       "", CurrentBB);
+        NewInst = new StoreInst(Val, Ptr2, CurrentBB);
         break;
       }
       default:
         report_fatal_error("Unrecognized instruction opcode");
     }
 
-    CurrentBBIndex++;
-    if (CurrentBBIndex == BBCount)
-      break;
-    CurrentBB = BasicBlocks[CurrentBBIndex];
+    if (isa<TerminatorInst>(NewInst)) {
+      CurrentBBIndex++;
+      if (CurrentBBIndex == BBCount)
+        break;
+      CurrentBB = BasicBlocks[CurrentBBIndex];
+    }
   }
 }
 
@@ -222,7 +277,7 @@ void WriteModule(OutputStream *Stream, Module *M) {
     WriteFunctionDecl(Stream, Func);
   }
   for (Module::iterator Func = M->begin(), E = M->end(); Func != E; ++Func) {
-    WriteFunction(Stream, Func);
+    FunctionWriter(Stream, Func).write();
   }
 }
 

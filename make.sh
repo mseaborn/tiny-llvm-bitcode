@@ -24,5 +24,4 @@ $ccache g++ out/ReadWrite.o out/Thaw.o \
     $($llvm_config --ldflags --libs) \
     -ldl -o out/Thaw
 
-./out/Freeze example.ll
 ./out/Freeze example.ll | ./out/Thaw

@@ -12,10 +12,10 @@ define i32 @func(i32 %arg1, i32 %arg2) {
   ret i32 %arg2
 }
 
-define void @load(i32 %ptr) {
+define i16 @load(i32 %ptr) {
   %ptr.p = inttoptr i32 %ptr to i16*
   %val = load i16* %ptr.p
-  ret void
+  ret i16 %val
 }
 
 define void @store(i32 %ptr, i32 %val) {

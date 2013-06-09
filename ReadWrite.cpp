@@ -145,6 +145,15 @@ public:
   void write();
 };
 
+static bool instructionHasValueId(Instruction *Inst) {
+  // These instructions are implicit.
+  if (isa<IntToPtrInst>(Inst) ||
+      isa<PtrToIntInst>(Inst) ||
+      (isa<BitCastInst>(Inst) && Inst->getType()->isPointerTy()))
+    return false;
+  return !Inst->getType()->isVoidTy();
+}
+
 void FunctionWriter::computeValueIndexes() {
   uint32_t NextIndex = 0;
 
@@ -157,11 +166,7 @@ void FunctionWriter::computeValueIndexes() {
        BB != E; ++BB) {
     for (BasicBlock::iterator Inst = BB->begin(), E = BB->end();
          Inst != E; ++Inst) {
-      if (isa<IntToPtrInst>(Inst) ||
-          isa<PtrToIntInst>(Inst) ||
-          (isa<BitCastInst>(Inst) && Inst->getType()->isPointerTy())) {
-        // These instructions are implicit.
-      } else {
+      if (instructionHasValueId(Inst)) {
         ValueMap[Inst] = NextIndex++;
       }
     }
@@ -281,6 +286,8 @@ void ReadFunction(InputStream *Stream, Function *Func) {
       if (CurrentBBIndex == BBCount)
         break;
       CurrentBB = BasicBlocks[CurrentBBIndex];
+    } else if (instructionHasValueId(NewInst)) {
+      ValueList.push_back(NewInst);
     }
   }
 }

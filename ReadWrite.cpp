@@ -222,8 +222,15 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
     }
     case Instruction::Br: {
       BranchInst *Br = cast<BranchInst>(Inst);
-      Stream->writeInt(Opcodes::INST_BR_UNCOND, "opcode");
-      writeBasicBlockOperand(Br->getSuccessor(0));
+      if (Br->isUnconditional()) {
+        Stream->writeInt(Opcodes::INST_BR_UNCOND, "opcode");
+        writeBasicBlockOperand(Br->getSuccessor(0));
+      } else {
+        Stream->writeInt(Opcodes::INST_BR_COND, "opcode");
+        writeBasicBlockOperand(Br->getSuccessor(0));
+        writeBasicBlockOperand(Br->getSuccessor(1));
+        writeOperand(Br->getCondition());
+      }
       break;
     }
     case Instruction::IntToPtr:
@@ -323,6 +330,13 @@ void FunctionReader::read() {
       case Opcodes::INST_BR_UNCOND: {
         BasicBlock *BB = readBasicBlockOperand();
         NewInst = BranchInst::Create(BB, CurrentBB);
+        break;
+      }
+      case Opcodes::INST_BR_COND: {
+        BasicBlock *BBIfTrue = readBasicBlockOperand();
+        BasicBlock *BBIfFalse = readBasicBlockOperand();
+        Value *Cond = readOperand();
+        NewInst = BranchInst::Create(BBIfTrue, BBIfFalse, Cond, CurrentBB);
         break;
       }
       default:

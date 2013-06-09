@@ -24,8 +24,16 @@ define void @store(i32 %ptr, i32 %val) {
   ret void
 }
 
-define void @branch() {
+define void @unconditional_branch() {
   br label %bb
 bb:
+  ret void
+}
+
+define void @conditional_branch(i1 %cond) {
+  br i1 %cond, label %iftrue, label %iffalse
+iftrue:
+  ret void
+iffalse:
   ret void
 }

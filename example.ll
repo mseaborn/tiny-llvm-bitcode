@@ -49,3 +49,8 @@ bb1:
   %val = load i16* %ptr.p
   br label %bb2
 }
+
+define i32 @global_ref() {
+  %ptr = ptrtoint i32 ()* @global_ref to i32
+  ret i32 %ptr
+}

@@ -169,10 +169,18 @@ void FunctionWriter::computeValueIndexes() {
   uint32_t NextBasicBlockID = 0;
   uint32_t NextValueID = 0;
 
+  // Add globals to ValueMap.  TODO: For efficiency, do this once per
+  // module rather than once per function.
+  Module *M = Func->getParent();
+  for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F) {
+    ValueMap[F] = NextValueID++;
+  }
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
        Arg != E; ++Arg) {
     ValueMap[Arg] = NextValueID++;
   }
+  // This is the ID at which instructions start.  Save this for later.
+  CurrentValueID = NextValueID;
 
   for (Function::iterator BB = Func->begin(), E = Func->end();
        BB != E; ++BB) {
@@ -187,12 +195,15 @@ void FunctionWriter::computeValueIndexes() {
 }
 
 void FunctionWriter::writeOperand(Value *Val) {
-  if (Val->getType()->isPointerTy()) {
-    if (IntToPtrInst *Cast = dyn_cast<IntToPtrInst>(Val)) {
-      Val = Cast->getOperand(0);
-    }
+  if (IntToPtrInst *Cast = dyn_cast<IntToPtrInst>(Val)) {
+    Val = Cast->getOperand(0);
+  } else if (PtrToIntInst *Cast = dyn_cast<PtrToIntInst>(Val)) {
+    Val = Cast->getOperand(0);
   }
-  assert(ValueMap.count(Val) == 1);
+  if (ValueMap.count(Val) != 1) {
+    errs() << "Value: " << *Val << "\n";
+    report_fatal_error("Can't get value ID");
+  }
   uint32_t ID = ValueMap[Val];
   Stream->writeInt(ID, "val");
   if (ID >= CurrentValueID) {
@@ -261,7 +272,6 @@ void FunctionWriter::write() {
   Stream->writeInt(Func->getBasicBlockList().size(), "basic_block_count");
   computeValueIndexes();
 
-  CurrentValueID = Func->getFunctionType()->getNumParams();
   for (Function::iterator BB = Func->begin(), E = Func->end();
        BB != E; ++BB) {
     for (BasicBlock::iterator Inst = BB->begin(), E = BB->end();
@@ -330,6 +340,12 @@ void FunctionReader::read() {
     BasicBlocks.push_back(BasicBlock::Create(Func->getContext(), "", Func));
   }
 
+  // Add globals to ValueList.  TODO: For efficiency, do this once per
+  // module rather than once per function.
+  Module *M = Func->getParent();
+  for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F) {
+    ValueList.push_back(F);
+  }
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
        Arg != E; ++Arg) {
     ValueList.push_back(Arg);

@@ -25,7 +25,10 @@ $ccache g++ out/ReadWrite.o out/Thaw.o \
     $($llvm_config --ldflags --libs) \
     -ldl -o out/Thaw
 
+$llvm_bin/opt example.ll -o out/example.o
 ./out/Freeze example.ll > out/example.bc
+wc -c out/example.o
+wc -l out/example.bc
 # TODO: Thaw should write to stdout, not stderr
 ./out/Thaw < out/example.bc 2>&1 | tee out/example.bc.ll
 $llvm_bin/opt out/example.bc.ll -S

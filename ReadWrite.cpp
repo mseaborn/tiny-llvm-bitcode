@@ -62,6 +62,7 @@ namespace Opcodes {
     INST_RET_VALUE,
     INST_LOAD,
     INST_STORE,
+    INST_CALL,
     INST_BR_UNCOND,
     INST_BR_COND,
   };
@@ -146,6 +147,7 @@ class FunctionWriter {
 
   void computeValueIndexes();
   void writeOperand(Value *Val);
+  void writeVarOperands(Instruction *Inst, uint32_t MinCount);
   void writeBasicBlockOperand(BasicBlock *BB);
   void writeInstruction(Instruction *Inst);
 
@@ -213,6 +215,14 @@ void FunctionWriter::writeOperand(Value *Val) {
   }
 }
 
+void FunctionWriter::writeVarOperands(Instruction *Inst, uint32_t MinCount) {
+  assert(Inst->getNumOperands() >= MinCount);
+  Stream->writeInt(Inst->getNumOperands() - MinCount, "operand_count");
+  for (unsigned I = 0; I < Inst->getNumOperands(); ++I) {
+    writeOperand(Inst->getOperand(I));
+  }
+}
+
 void FunctionWriter::writeBasicBlockOperand(BasicBlock *BB) {
   assert(BasicBlockMap.count(BB) == 1);
   Stream->writeInt(BasicBlockMap[BB], "basic_block_ref");
@@ -242,6 +252,12 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       Stream->writeInt(Opcodes::INST_STORE, "opcode");
       writeOperand(Store->getOperand(0));
       writeOperand(Store->getOperand(1));
+      break;
+    }
+    case Instruction::Call: {
+      CallInst *Call = cast<CallInst>(Inst);
+      Stream->writeInt(Opcodes::INST_CALL, "opcode");
+      writeVarOperands(Call, 1);
       break;
     }
     case Instruction::Br: {
@@ -396,6 +412,17 @@ void FunctionReader::read() {
         Value *Val = readScalarOperand();
         Value *Ptr = readPtrOperand(Val->getType());
         NewInst = new StoreInst(Val, Ptr, CurrentBB);
+        break;
+      }
+      case Opcodes::INST_CALL: {
+        uint32_t OpCount = Stream->readInt("operand_count");
+        SmallVector<Value *, 10> Args;
+        for (unsigned I = 0; I < OpCount; ++I) {
+          Args.push_back(readScalarOperand());
+        }
+        // The callee is the last operand.
+        Value *Callee = readRawOperand();
+        NewInst = CallInst::Create(Callee, Args, "", CurrentBB);
         break;
       }
       case Opcodes::INST_BR_UNCOND: {

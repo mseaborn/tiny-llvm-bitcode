@@ -54,3 +54,8 @@ define i32 @global_ref() {
   %ptr = ptrtoint i32 ()* @global_ref to i32
   ret i32 %ptr
 }
+
+define i16 @function_call(i32 %ptr) {
+  %result = call i16 @load(i32 %ptr)
+  ret i16 %result
+}

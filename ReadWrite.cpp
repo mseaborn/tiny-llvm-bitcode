@@ -288,22 +288,28 @@ void FunctionWriter::write() {
 class FunctionReader {
   InputStream *Stream;
   Function *Func;
+  Type *IntPtrType;
   uint32_t BBCount;
   SmallVector<BasicBlock *, 10> BasicBlocks;
   SmallVector<Value *, 64> ValueList;
   uint32_t CurrentValueID;
+  BasicBlock *CurrentBB;
 
-  Value *readOperand();
+  Value *readRawOperand();
+  Value *readScalarOperand();
+  Value *readPtrOperand(Type *Ty);
   BasicBlock *readBasicBlockOperand();
 
 public:
   FunctionReader(InputStream *Stream, Function *Func):
-    Stream(Stream), Func(Func) {}
+      Stream(Stream), Func(Func) {
+    IntPtrType = IntegerType::get(Func->getContext(), 32);
+  }
 
   void read();
 };
 
-Value *FunctionReader::readOperand() {
+Value *FunctionReader::readRawOperand() {
   uint32_t ID = Stream->readInt("val");
   if (ID < CurrentValueID) {
     Value *V = ValueList[ID];
@@ -323,6 +329,19 @@ Value *FunctionReader::readOperand() {
   assert(!ValueList[ID]);
   ValueList[ID] = Placeholder;
   return Placeholder;
+}
+
+Value *FunctionReader::readScalarOperand() {
+  Value *Val = readRawOperand();
+  if (Val->getType()->isPointerTy()) {
+    Val = new PtrToIntInst(Val, IntPtrType, "", CurrentBB);
+  }
+  return Val;
+}
+
+Value *FunctionReader::readPtrOperand(Type *Ty) {
+  Value *Val = readRawOperand();
+  return new IntToPtrInst(Val, Ty->getPointerTo(), "", CurrentBB);
 }
 
 BasicBlock *FunctionReader::readBasicBlockOperand() {
@@ -352,14 +371,14 @@ void FunctionReader::read() {
   }
 
   unsigned CurrentBBIndex = 0;
-  BasicBlock *CurrentBB = BasicBlocks[0];
+  CurrentBB = BasicBlocks[0];
   CurrentValueID = ValueList.size();
   for (;;) {
     uint32_t Opcode = Stream->readInt("opcode");
     Instruction *NewInst = NULL;
     switch (Opcode) {
       case Opcodes::INST_RET_VALUE: {
-        Value *RetVal = readOperand();
+        Value *RetVal = readScalarOperand();
         NewInst = ReturnInst::Create(Func->getContext(), RetVal, CurrentBB);
         break;
       }
@@ -369,17 +388,14 @@ void FunctionReader::read() {
       }
       case Opcodes::INST_LOAD: {
         Type *Ty = ReadType(Func->getContext(), Stream);
-        Value *Ptr = readOperand();
-        Value *Ptr2 = new IntToPtrInst(Ptr, Ty->getPointerTo(), "", CurrentBB);
-        NewInst = new LoadInst(Ptr2, "", CurrentBB);
+        Value *Ptr = readPtrOperand(Ty);
+        NewInst = new LoadInst(Ptr, "", CurrentBB);
         break;
       }
       case Opcodes::INST_STORE: {
-        Value *Val = readOperand();
-        Value *Ptr = readOperand();
-        Value *Ptr2 = new IntToPtrInst(Ptr, Val->getType()->getPointerTo(),
-                                       "", CurrentBB);
-        NewInst = new StoreInst(Val, Ptr2, CurrentBB);
+        Value *Val = readScalarOperand();
+        Value *Ptr = readPtrOperand(Val->getType());
+        NewInst = new StoreInst(Val, Ptr, CurrentBB);
         break;
       }
       case Opcodes::INST_BR_UNCOND: {
@@ -390,7 +406,7 @@ void FunctionReader::read() {
       case Opcodes::INST_BR_COND: {
         BasicBlock *BBIfTrue = readBasicBlockOperand();
         BasicBlock *BBIfFalse = readBasicBlockOperand();
-        Value *Cond = readOperand();
+        Value *Cond = readScalarOperand();
         NewInst = BranchInst::Create(BBIfTrue, BBIfFalse, Cond, CurrentBB);
         break;
       }

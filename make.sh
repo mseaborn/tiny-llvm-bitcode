@@ -28,5 +28,4 @@ $ccache g++ out/ReadWrite.o out/Thaw.o \
 ./out/Freeze example.ll > out/example.bc
 # TODO: Thaw should write to stdout, not stderr
 ./out/Thaw < out/example.bc 2>&1 | tee out/example.bc.ll
-# TODO: Make this pass LLVM's IR verifier
-# $llvm_bin/opt out/example.bc.ll -S
+$llvm_bin/opt out/example.bc.ll -S

@@ -55,7 +55,13 @@ define i32 @global_ref() {
   ret i32 %ptr
 }
 
-define i16 @function_call(i32 %ptr) {
+define i16 @direct_call(i32 %ptr) {
   %result = call i16 @load(i32 %ptr)
+  ret i16 %result
+}
+
+define i16 @indirect_call(i32 %func, i64 %arg) {
+  %func.p = inttoptr i32 %func to i16 (i64)*
+  %result = call i16 %func.p(i64 %arg)
   ret i16 %result
 }

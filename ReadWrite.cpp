@@ -256,7 +256,11 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
     }
     case Instruction::Call: {
       CallInst *Call = cast<CallInst>(Inst);
+      // TODO: Add a separate opcode for direct calls.  In that case,
+      // we won't need to output the return type and the argument
+      // count.
       Stream->writeInt(Opcodes::INST_CALL, "opcode");
+      WriteType(Stream, Call->getType());
       writeVarOperands(Call, 1);
       break;
     }
@@ -349,15 +353,16 @@ Value *FunctionReader::readRawOperand() {
 
 Value *FunctionReader::readScalarOperand() {
   Value *Val = readRawOperand();
-  if (Val->getType()->isPointerTy()) {
+  if (Val->getType()->isPointerTy())
     Val = new PtrToIntInst(Val, IntPtrType, "", CurrentBB);
-  }
   return Val;
 }
 
 Value *FunctionReader::readPtrOperand(Type *Ty) {
   Value *Val = readRawOperand();
-  return new IntToPtrInst(Val, Ty->getPointerTo(), "", CurrentBB);
+  if (!Val->getType()->isPointerTy())
+    Val = new IntToPtrInst(Val, Ty->getPointerTo(), "", CurrentBB);
+  return Val;
 }
 
 BasicBlock *FunctionReader::readBasicBlockOperand() {
@@ -415,13 +420,18 @@ void FunctionReader::read() {
         break;
       }
       case Opcodes::INST_CALL: {
+        Type *ReturnType = ReadType(Func->getContext(), Stream);
         uint32_t OpCount = Stream->readInt("operand_count");
         SmallVector<Value *, 10> Args;
+        SmallVector<Type *, 10> ArgTypes;
         for (unsigned I = 0; I < OpCount; ++I) {
-          Args.push_back(readScalarOperand());
+          Value *Arg = readScalarOperand();
+          Args.push_back(Arg);
+          ArgTypes.push_back(Arg->getType());
         }
+        Type *FuncTy = FunctionType::get(ReturnType, ArgTypes, false);
         // The callee is the last operand.
-        Value *Callee = readRawOperand();
+        Value *Callee = readPtrOperand(FuncTy);
         NewInst = CallInst::Create(Callee, Args, "", CurrentBB);
         break;
       }

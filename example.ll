@@ -97,3 +97,10 @@ define internal i32 @const_int() {
 }
 
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
+
+define internal void @call_memcpy(i32 %dest, i32 %src, i32 %size) {
+  %dest.p = inttoptr i32 %dest to i8*
+  %src.p = inttoptr i32 %src to i8*
+  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %dest.p, i8* %src.p, i32 %size, i32 1, i1 0)
+  ret void
+}

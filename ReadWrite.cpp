@@ -210,7 +210,6 @@ class FunctionWriter {
   void allocateEarlyValueIDs();
   void materializeOperand(Value *Val);
   void writeOperand(Value *Val);
-  void writeVarOperands(Instruction *Inst, uint32_t MinCount);
   void writeBasicBlockOperand(BasicBlock *BB);
   void writeInstruction(Instruction *Inst);
 
@@ -291,14 +290,6 @@ void FunctionWriter::writeOperand(Value *Val) {
   Stream->writeInt(ValueMap[Val], "val");
 }
 
-void FunctionWriter::writeVarOperands(Instruction *Inst, uint32_t MinCount) {
-  assert(Inst->getNumOperands() >= MinCount);
-  Stream->writeInt(Inst->getNumOperands() - MinCount, "operand_count");
-  for (unsigned I = 0; I < Inst->getNumOperands(); ++I) {
-    writeOperand(Inst->getOperand(I));
-  }
-}
-
 void FunctionWriter::writeBasicBlockOperand(BasicBlock *BB) {
   assert(BasicBlockMap.count(BB) == 1);
   Stream->writeInt(BasicBlockMap[BB], "basic_block_ref");
@@ -358,8 +349,16 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       // we won't need to output the return type and the argument
       // count.
       Stream->writeInt(Opcodes::INST_CALL, "opcode");
+      // Note: internally, CallInsts put the callee as the last
+      // operand, but here we write out the callee as the first
+      // operand.
+      writeOperand(Call->getCalledValue());
+      // Write the return type.
       WriteType(Stream, Call->getType());
-      writeVarOperands(Call, 1);
+      Stream->writeInt(Call->getNumArgOperands(), "argument_count");
+      for (unsigned I = 0, E = Call->getNumArgOperands(); I < E; ++I) {
+        writeOperand(Call->getArgOperand(I));
+      }
       break;
     }
     case Instruction::Br: {
@@ -429,6 +428,7 @@ class FunctionReader {
   uint32_t FwdRefsResolved;
 
   Value *readRawOperand();
+  Value *castOperand(Value *Val, Type *Ty);
   Value *readScalarOperand();
   Value *readPtrOperand(Type *Ty);
   BasicBlock *readBasicBlockOperand();
@@ -449,18 +449,26 @@ Value *FunctionReader::readRawOperand() {
   return ValueList[ID];
 }
 
-Value *FunctionReader::readScalarOperand() {
-  Value *Val = readRawOperand();
-  if (Val->getType()->isPointerTy())
-    Val = new PtrToIntInst(Val, IntPtrType, "", CurrentBB);
+// If Ty is NULL, this coerces Val to be a scalar.  Otherwise, it
+// coerces Val to be a pointer-to-Ty.
+Value *FunctionReader::castOperand(Value *Val, Type *Ty) {
+  if (Ty) {
+    if (!Val->getType()->isPointerTy())
+      Val = new IntToPtrInst(Val, Ty->getPointerTo(), "", CurrentBB);
+  } else {
+    if (Val->getType()->isPointerTy())
+      Val = new PtrToIntInst(Val, IntPtrType, "", CurrentBB);
+  }
   return Val;
 }
 
+Value *FunctionReader::readScalarOperand() {
+  return castOperand(readRawOperand(), NULL);
+}
+
 Value *FunctionReader::readPtrOperand(Type *Ty) {
-  Value *Val = readRawOperand();
-  if (!Val->getType()->isPointerTy())
-    Val = new IntToPtrInst(Val, Ty->getPointerTo(), "", CurrentBB);
-  return Val;
+  assert(Ty);
+  return castOperand(readRawOperand(), Ty);
 }
 
 BasicBlock *FunctionReader::readBasicBlockOperand() {
@@ -518,18 +526,33 @@ Value *FunctionReader::readInstruction() {
       return new AllocaInst(Ty, ArraySize, "", CurrentBB);
     }
     case Opcodes::INST_CALL: {
+      Value *Callee = readRawOperand();
       Type *ReturnType = ReadType(Func->getContext(), Stream);
-      uint32_t OpCount = Stream->readInt("operand_count");
+      uint32_t ArgCount = Stream->readInt("argument_count");
+      Function *DirectFunc = dyn_cast<Function>(Callee);
+
       SmallVector<Value *, 10> Args;
       SmallVector<Type *, 10> ArgTypes;
-      for (unsigned I = 0; I < OpCount; ++I) {
-        Value *Arg = readScalarOperand();
+      for (unsigned I = 0; I < ArgCount; ++I) {
+        Value *Arg;
+        // Handle direct calls specially in order to handle intrinsics
+        // that take pointer arguments.
+        if (DirectFunc &&
+            DirectFunc->getFunctionType()->getParamType(I)->isPointerTy()) {
+          Type *Ty = DirectFunc->getFunctionType()->getParamType(I);
+          Arg = readPtrOperand(Ty->getPointerElementType());
+        } else {
+          Arg = readScalarOperand();
+        }
         Args.push_back(Arg);
         ArgTypes.push_back(Arg->getType());
       }
-      Type *FuncTy = FunctionType::get(ReturnType, ArgTypes, false);
-      // The callee is the last operand.
-      Value *Callee = readPtrOperand(FuncTy);
+      // TODO: Produce a nicer error message if a function is
+      // direct-called with the argument/return types.
+      if (!DirectFunc) {
+        Type *FuncTy = FunctionType::get(ReturnType, ArgTypes, false);
+        Callee = castOperand(Callee, FuncTy);
+      }
       return CallInst::Create(Callee, Args, "", CurrentBB);
     }
     case Opcodes::INST_BR_UNCOND: {

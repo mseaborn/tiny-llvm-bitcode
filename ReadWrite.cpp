@@ -118,16 +118,59 @@ Type *ReadType(LLVMContext &Context, InputStream *Stream) {
 }
 
 
+void WriteString(OutputStream *Stream, const std::string &String) {
+  Stream->writeInt(String.size(), "string_length");
+  for (unsigned I = 0, E = String.size(); I < E; ++I) {
+    Stream->writeInt(String[I], "char");
+  }
+}
+
+std::string ReadString(InputStream *Stream) {
+  std::string Str;
+  unsigned Size = Stream->readInt("string_length");
+  for (unsigned I = 0; I < Size; ++I) {
+    char C = Stream->readInt("char");
+    // TODO: Avoid taking O(n^2) time.
+    Str += C;
+  }
+  return Str;
+}
+
+
+IntegerType *GetIntPtrType(LLVMContext &Context) {
+  return IntegerType::get(Context, 32);
+}
+
 void WriteFunctionDecl(OutputStream *Stream, Function *Func) {
+  // TODO: Make this stricter.
+  Stream->writeInt((Func->getLinkage() == GlobalValue::ExternalLinkage ? 1 : 0),
+                   "is_external");
+  if (Func->getLinkage() == GlobalValue::ExternalLinkage) {
+    WriteString(Stream, Func->getName());
+  }
+
   FunctionType *FTy = Func->getFunctionType();
   WriteType(Stream, FTy->getReturnType());
   Stream->writeInt(FTy->getNumParams(), "arg_count");
   for (unsigned I = 0; I < FTy->getNumParams(); ++I) {
-    WriteType(Stream, FTy->getParamType(I));
+    Type *ArgTy = FTy->getParamType(I);
+    // Convert pointer types in order to handle intrinsics.
+    // TODO: Allow this only for intrinsics.
+    if (ArgTy->isPointerTy())
+      ArgTy = GetIntPtrType(Func->getContext());
+    WriteType(Stream, ArgTy);
   }
 }
 
 Function *ReadFunctionDecl(InputStream *Stream, Module *M) {
+  GlobalValue::LinkageTypes Linkage =
+    (Stream->readInt("is_external") ?
+     GlobalValue::ExternalLinkage : GlobalValue::InternalLinkage);
+  std::string FuncName;
+  if (Linkage == GlobalValue::ExternalLinkage) {
+    FuncName = ReadString(Stream);
+  }
+
   Type *ReturnType = ReadType(M->getContext(), Stream);
   uint32_t ArgCount = Stream->readInt("arg_count");
   SmallVector<Type *, 10> ArgTypes;
@@ -135,8 +178,14 @@ Function *ReadFunctionDecl(InputStream *Stream, Module *M) {
   for (unsigned I = 0; I < ArgCount; ++I) {
     ArgTypes.push_back(ReadType(M->getContext(), Stream));
   }
+  // Restore pointer arguments in intrinsics.
+  if (StringRef(FuncName).startswith("llvm.memcpy.")) {
+    Type *PtrTy = IntegerType::get(M->getContext(), 8)->getPointerTo();
+    ArgTypes[0] = PtrTy;
+    ArgTypes[1] = PtrTy;
+  }
   FunctionType *FTy = FunctionType::get(ReturnType, ArgTypes, false);
-  return Function::Create(FTy, GlobalValue::InternalLinkage, "", M);
+  return Function::Create(FTy, Linkage, FuncName, M);
 }
 
 
@@ -454,7 +503,10 @@ Instruction *FunctionReader::readInstruction() {
 void FunctionReader::read() {
   Stream->readMarker("function_def_start");
   BBCount = Stream->readInt("basic_block_count");
-  assert(BBCount > 0);
+  // TODO: Make this stricter and handle declarations separately.
+  // assert(BBCount > 0);
+  if (BBCount == 0)
+    return;
   BasicBlocks.reserve(BBCount);
   for (unsigned I = 0; I < BBCount; ++I) {
     BasicBlocks.push_back(BasicBlock::Create(Func->getContext(), "", Func));

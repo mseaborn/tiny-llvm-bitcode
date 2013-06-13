@@ -77,3 +77,5 @@ define internal i32 @alloca_variable(i32 %size) {
   %ptr = ptrtoint [12 x i8]* %ptr.p to i32
   ret i32 %ptr
 }
+
+declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)

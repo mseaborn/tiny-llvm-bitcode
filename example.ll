@@ -106,3 +106,9 @@ define internal void @call_memcpy(i32 %dest, i32 %src, i32 %size) {
 }
 
 declare i8* @llvm.nacl.read.tp()
+
+define i32 @get_thread_pointer() {
+  %ptr.p = call i8* @llvm.nacl.read.tp()
+  %ptr = ptrtoint i8* %ptr.p to i32
+  ret i32 %ptr
+}

@@ -361,7 +361,7 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       // operand.
       writeOperand(Call->getCalledValue());
       // Write the return type.
-      WriteType(Stream, Call->getType());
+      WriteType(Stream, StripPtrType(Call->getType()));
       Stream->writeInt(Call->getNumArgOperands(), "argument_count");
       for (unsigned I = 0, E = Call->getNumArgOperands(); I < E; ++I) {
         writeOperand(Call->getArgOperand(I));

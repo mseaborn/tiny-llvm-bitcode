@@ -69,6 +69,7 @@ namespace Opcodes {
     INST_CALL,
     INST_BR_UNCOND,
     INST_BR_COND,
+    INST_SWITCH,
     INST_UNREACHABLE,
     INST_SELECT,
     INST_PHI,
@@ -337,9 +338,13 @@ static Opcodes::InstOpcode getOpcodeToWrite(Instruction *Inst) {
 }
 
 void FunctionWriter::writeInstruction(Instruction *Inst) {
-  // First, ensure the instruction's operands have been allocated value IDs.
-  for (unsigned I = 0, E = Inst->getNumOperands(); I < E; ++I) {
-    materializeOperand(Inst->getOperand(I));
+  // First, ensure the instruction's operands have been allocated
+  // value IDs.  SwitchInsts use array/vector constants internally, so
+  // skip them here.
+  if (!isa<SwitchInst>(Inst)) {
+    for (unsigned I = 0, E = Inst->getNumOperands(); I < E; ++I) {
+      materializeOperand(Inst->getOperand(I));
+    }
   }
 
   switch (Inst->getOpcode()) {
@@ -424,6 +429,45 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
         writeBasicBlockOperand(Br->getSuccessor(0));
         writeBasicBlockOperand(Br->getSuccessor(1));
         writeOperand(Br->getCondition());
+      }
+      break;
+    }
+    case Instruction::Switch: {
+      SwitchInst *Switch = cast<SwitchInst>(Inst);
+      // For SwitchInsts, materializeOperand() only works for the
+      // condition operand, not other operands, so we call it
+      // explicitly here.
+      materializeOperand(Switch->getCondition());
+      Stream->writeInt(Opcodes::INST_SWITCH, "opcode");
+      writeOperand(Switch->getCondition());
+      writeBasicBlockOperand(Switch->getDefaultDest());
+
+      uint32_t CaseCount = 0;
+      for (SwitchInst::CaseIt Case = Switch->case_begin(),
+             E = Switch->case_end(); Case != E; ++Case) {
+        IntegersSubset CaseRanges = Case.getCaseValueEx();
+        for (unsigned I = 0, E = CaseRanges.getNumItems(); I < E ; ++I) {
+          ++CaseCount;
+        }
+      }
+      Stream->writeInt(CaseCount, "case_count");
+
+      for (SwitchInst::CaseIt Case = Switch->case_begin(),
+             E = Switch->case_end(); Case != E; ++Case) {
+        IntegersSubset CaseRanges = Case.getCaseValueEx();
+        for (unsigned I = 0, E = CaseRanges.getNumItems(); I < E ; ++I) {
+          uint64_t Low =
+              CaseRanges.getItem(I).getLow().toConstantInt()->getZExtValue();
+          uint64_t High =
+              CaseRanges.getItem(I).getHigh().toConstantInt()->getZExtValue();
+          // TODO: Handle ranges once I work out how to test this.
+          // Ranges do not seem to be expressible in the assembly
+          // syntax, and they are not automatically introduced by the
+          // assembler.
+          assert(High == Low);
+          Stream->writeInt(Low, "case_val");
+          writeBasicBlockOperand(Case.getCaseSuccessor());
+        }
       }
       break;
     }
@@ -688,6 +732,22 @@ Value *FunctionReader::readInstruction() {
       BasicBlock *BBIfFalse = readBasicBlockOperand();
       Value *Cond = readScalarOperand();
       return BranchInst::Create(BBIfTrue, BBIfFalse, Cond, CurrentBB);
+    }
+    case Opcodes::INST_SWITCH: {
+      Value *Condition = readScalarOperand();
+      IntegerType *CondTy = dyn_cast<IntegerType>(Condition->getType());
+      if (!CondTy)
+        report_fatal_error("Switch condition is not of integer type");
+      BasicBlock *DefaultBB = readBasicBlockOperand();
+      uint32_t CaseCount = Stream->readInt("case_count");
+      SwitchInst *Switch = SwitchInst::Create(Condition, DefaultBB,
+                                              CaseCount, CurrentBB);
+      for (unsigned I = 0; I < CaseCount; ++I) {
+        uint64_t CaseVal = Stream->readInt("case_val");
+        BasicBlock *Dest = readBasicBlockOperand();
+        Switch->addCase(ConstantInt::get(CondTy, CaseVal), Dest);
+      }
+      return Switch;
     }
     case Opcodes::INST_UNREACHABLE: {
       return new UnreachableInst(Func->getContext(), CurrentBB);

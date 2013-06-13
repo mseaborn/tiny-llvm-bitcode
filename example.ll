@@ -44,6 +44,25 @@ iffalse:
   ret void
 }
 
+define internal void @switch(i32 %x) {
+  switch i32 %x, label %default [i32 123, label %case1
+                                 i32 124, label %case1
+                                 i32 456, label %case2]
+case1:
+  ret void
+case2:
+  ret void
+default:
+  ret void
+}
+
+; SwitchInst's operand must be handled specially, so test that here.
+define internal void @switch_const() {
+  switch i32 123, label %next [i32 0, label %next]
+next:
+  ret void
+}
+
 define internal void @unreachable() {
   unreachable
 }

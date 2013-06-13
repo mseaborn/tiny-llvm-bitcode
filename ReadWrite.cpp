@@ -217,13 +217,31 @@ Function *ReadFunctionDecl(InputStream *Stream, Module *M) {
 }
 
 
+class ValueWriterMap {
+  uint32_t NextValueID;
+  DenseMap<Value *, uint32_t> ValueToID;
+
+public:
+  ValueWriterMap(): NextValueID(0) {}
+
+  void addIDForValue(Value *Val) {
+    ValueToID[Val] = NextValueID++;
+  }
+  bool hasIDForValue(Value *Val) {
+    return ValueToID.count(Val) == 1;
+  }
+  uint32_t getIDForValue(Value *Val) {
+    assert(hasIDForValue(Val));
+    return ValueToID[Val];
+  }
+};
+
 class FunctionWriter {
   OutputStream *Stream;
   Function *Func;
   DenseMap<BasicBlock *, uint32_t> BasicBlockMap;
 
-  uint32_t NextValueID;
-  DenseMap<Value *, uint32_t> ValueMap;
+  ValueWriterMap ValueMap;
   // Forward-referenced values that have not been defined yet.
   uint32_t NextFwdRefID;
   DenseMap<Value *, uint32_t> FwdRefs;
@@ -252,23 +270,22 @@ static bool instructionHasValueId(Value *Inst) {
 
 void FunctionWriter::allocateEarlyValueIDs() {
   uint32_t NextBasicBlockID = 0;
-  NextValueID = 0;
   NextFwdRefID = 0;
 
   // Add globals to ValueMap.  TODO: For efficiency, do this once per
   // module rather than once per function.
   Module *M = Func->getParent();
   for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F) {
-    ValueMap[F] = NextValueID++;
+    ValueMap.addIDForValue(F);
   }
   for (Module::global_iterator GV = M->global_begin(), E = M->global_end();
        GV != E; ++GV) {
-    ValueMap[GV] = NextValueID++;
+    ValueMap.addIDForValue(GV);
   }
   // Allocate value IDs for the function's arguments.
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
        Arg != E; ++Arg) {
-    ValueMap[Arg] = NextValueID++;
+    ValueMap.addIDForValue(Arg);
   }
   // Allocate IDs for basic blocks.
   for (Function::iterator BB = Func->begin(), E = Func->end();
@@ -295,7 +312,7 @@ static Value *stripPtrCasts(Value *Val) {
 // to the output stream if necessary.
 void FunctionWriter::materializeOperand(Value *Val) {
   Val = stripPtrCasts(Val);
-  if (isa<BasicBlock>(Val) || ValueMap.count(Val) == 1)
+  if (isa<BasicBlock>(Val) || ValueMap.hasIDForValue(Val))
     return;
   // GlobalValues should already be in ValueMap.
   assert(!isa<GlobalValue>(Val));
@@ -304,22 +321,18 @@ void FunctionWriter::materializeOperand(Value *Val) {
     // TODO: Could we omit the type here to save space?
     WriteType(Stream, C->getType());
     Stream->writeInt(C->getZExtValue(), "constant_int");
-    ValueMap[Val] = NextValueID++;
+    ValueMap.addIDForValue(Val);
     return;
   }
   Stream->writeInt(Opcodes::INST_FWD_REF, "opcode");
   WriteType(Stream, Val->getType());
-  ValueMap[Val] = NextValueID++;
+  ValueMap.addIDForValue(Val);
   FwdRefs[Val] = NextFwdRefID++;
 }
 
 void FunctionWriter::writeOperand(Value *Val) {
   Val = stripPtrCasts(Val);
-  if (ValueMap.count(Val) != 1) {
-    errs() << "Value: " << *Val << "\n";
-    report_fatal_error("Can't get value ID");
-  }
-  Stream->writeInt(ValueMap[Val], "val");
+  Stream->writeInt(ValueMap.getIDForValue(Val), "val");
 }
 
 void FunctionWriter::writeBasicBlockOperand(BasicBlock *BB) {
@@ -547,7 +560,7 @@ void FunctionWriter::write() {
          Inst != E; ++Inst) {
       writeInstruction(Inst);
       if (instructionHasValueId(Inst)) {
-        ValueMap[Inst] = NextValueID++;
+        ValueMap.addIDForValue(Inst);
         // If this resolves a forward reference, declare that.
         if (FwdRefs.count(Inst)) {
           Stream->writeInt(Opcodes::INST_FWD_DEF, "opcode");

@@ -15,7 +15,16 @@ int main(int Argc, char **Argv) {
   llvm::SMDiagnostic Err;
   llvm::LLVMContext &Context = llvm::getGlobalContext();
   Module *M = new Module(StringRef(), Context);
-  ReadModuleFromFile(stdin, M);
+  if (Argc == 1) {
+    ReadModuleFromFile(stdin, M);
+  } else if (Argc == 2) {
+    FILE *FP = fopen(Argv[1], "r");
+    assert(FP);
+    ReadModuleFromFile(FP, M);
+    fclose(FP);
+  } else {
+    report_fatal_error("Unrecognized arguments");
+  }
   outs() << *M;
   return 0;
 }

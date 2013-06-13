@@ -207,6 +207,7 @@ class FunctionWriter {
   DenseMap<Value *, uint32_t> FwdRefs;
 
   void allocateEarlyValueIDs();
+  void materializeOperand(Value *Val);
   void writeOperand(Value *Val);
   void writeVarOperands(Instruction *Inst, uint32_t MinCount);
   void writeBasicBlockOperand(BasicBlock *BB);
@@ -260,6 +261,20 @@ static Value *stripPtrCasts(Value *Val) {
   return Val;
 }
 
+// Ensure that Val has a value ID allocated for it.  Write an opcode
+// to the output stream if necessary.
+void FunctionWriter::materializeOperand(Value *Val) {
+  Val = stripPtrCasts(Val);
+  if (!isa<BasicBlock>(Val) &&
+      !isa<Constant>(Val) &&
+      ValueMap.count(Val) != 1) {
+    Stream->writeInt(Opcodes::INST_FWD_REF, "opcode");
+    WriteType(Stream, Val->getType());
+    ValueMap[Val] = NextValueID++;
+    FwdRefs[Val] = NextFwdRefID++;
+  }
+}
+
 void FunctionWriter::writeOperand(Value *Val) {
   Val = stripPtrCasts(Val);
   if (ValueMap.count(Val) != 1) {
@@ -285,15 +300,7 @@ void FunctionWriter::writeBasicBlockOperand(BasicBlock *BB) {
 void FunctionWriter::writeInstruction(Instruction *Inst) {
   // First, ensure the instruction's operands have been allocated value IDs.
   for (unsigned I = 0, E = Inst->getNumOperands(); I < E; ++I) {
-    Value *Val = stripPtrCasts(Inst->getOperand(I));
-    if (!isa<BasicBlock>(Val) &&
-        !isa<Constant>(Val) &&
-        ValueMap.count(Val) != 1) {
-      Stream->writeInt(Opcodes::INST_FWD_REF, "opcode");
-      WriteType(Stream, Val->getType());
-      ValueMap[Val] = NextValueID++;
-      FwdRefs[Val] = NextFwdRefID++;
-    }
+    materializeOperand(Inst->getOperand(I));
   }
 
   switch (Inst->getOpcode()) {

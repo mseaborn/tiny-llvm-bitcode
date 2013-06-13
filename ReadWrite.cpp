@@ -63,6 +63,7 @@ namespace Opcodes {
     INST_RET_VALUE,
     INST_LOAD,
     INST_STORE,
+    INST_ATOMICRMW, // TODO: Use a higher opcode, since this is rare
     INST_ALLOCA_FIXED,
     INST_ALLOCA_VARIABLE,
     INST_CALL,
@@ -368,6 +369,18 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       writeOperand(Store->getOperand(1));
       break;
     }
+    case Instruction::AtomicRMW: {
+      AtomicRMWInst *Op = cast<AtomicRMWInst>(Inst);
+      Stream->writeInt(Opcodes::INST_ATOMICRMW, "opcode");
+      // TODO: Ensure that these opcode values stay stable.
+      // TODO: Check the Ordering and SynchScope fields.
+      // TODO: Handle "volatile" attribute.
+      Stream->writeInt(Op->getOperation(), "atomicrmw_op");
+      // Swap operands and put pointer second for consistency with INST_STORE.
+      writeOperand(Op->getOperand(1));
+      writeOperand(Op->getOperand(0));
+      break;
+    }
     case Instruction::Alloca: {
       // TODO: Handle "align".
       AllocaInst *Alloca = cast<AllocaInst>(Inst);
@@ -617,6 +630,14 @@ Value *FunctionReader::readInstruction() {
       Value *Val = readScalarOperand();
       Value *Ptr = readPtrOperand(Val->getType());
       return new StoreInst(Val, Ptr, CurrentBB);
+    }
+    case Opcodes::INST_ATOMICRMW: {
+      AtomicRMWInst::BinOp Op =
+          (AtomicRMWInst::BinOp) Stream->readInt("atomicrmw_op");
+      Value *Val = readScalarOperand();
+      Value *Ptr = readPtrOperand(Val->getType());
+      return new AtomicRMWInst(Op, Ptr, Val, SequentiallyConsistent,
+                               CrossThread, CurrentBB);
     }
     case Opcodes::INST_ALLOCA_FIXED:
     case Opcodes::INST_ALLOCA_VARIABLE: {

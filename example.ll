@@ -24,6 +24,12 @@ define internal void @store(i32 %ptr, i32 %val) {
   ret void
 }
 
+define internal i32 @atomicrmw(i32 %ptr, i32 %val) {
+  %ptr.p = inttoptr i32 %ptr to i32*
+  %result = atomicrmw xchg i32* %ptr.p, i32 %val seq_cst
+  ret i32 %result
+}
+
 define internal void @unconditional_branch() {
   br label %bb
 bb:

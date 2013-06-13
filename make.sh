@@ -29,8 +29,7 @@ $llvm_bin/opt example.ll -o out/example.o
 ./out/Freeze example.ll > out/example.bc
 wc -c out/example.o
 wc -l out/example.bc
-# TODO: Thaw should write to stdout, not stderr
-./out/Thaw < out/example.bc > out/example.bc.ll 2>&1
+./out/Thaw < out/example.bc > out/example.bc.ll
 
 $llvm_bin/opt example.ll -strip -S \
     | grep -v '; ModuleID =' > out/example.ll.orig

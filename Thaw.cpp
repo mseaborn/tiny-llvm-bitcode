@@ -5,6 +5,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/IRReader.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "ReadWrite.h"
 
@@ -15,6 +16,6 @@ int main(int Argc, char **Argv) {
   llvm::LLVMContext &Context = llvm::getGlobalContext();
   Module *M = new Module(StringRef(), Context);
   ReadModuleFromFile(stdin, M);
-  M->dump();
+  outs() << *M;
   return 0;
 }

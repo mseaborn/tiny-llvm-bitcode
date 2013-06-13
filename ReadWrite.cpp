@@ -72,6 +72,7 @@ namespace Opcodes {
 #define HANDLE_BINARY_INST(LLVM_OP, WIRE_OP) WIRE_OP,
 #include "Instructions.def"
 #undef HANDLE_BINARY_INST
+    INST_CMP,
     // Pseudo-instructions.
     // FWD_REF(TYPE) creates a placeholder for a forward reference.
     INST_FWD_REF,
@@ -421,6 +422,13 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
         writeOperand(Op->getOperand(1));
         break;
       }
+      if (CmpInst *Op = dyn_cast<CmpInst>(Inst)) {
+        Stream->writeInt(Opcodes::INST_CMP, "opcode");
+        Stream->writeInt(Op->getPredicate(), "predicate");
+        writeOperand(Op->getOperand(0));
+        writeOperand(Op->getOperand(1));
+        break;
+      }
       errs() << "Instruction: " << *Inst << "\n";
       report_fatal_error("Unhandled instruction type");
   }
@@ -628,6 +636,18 @@ Value *FunctionReader::readInstruction() {
 #include "Instructions.def"
 #undef HANDLE_BINARY_INST
 
+    case Opcodes::INST_CMP: {
+      CmpInst::Predicate Predicate =
+          (CmpInst::Predicate) Stream->readInt("predicate");
+      Value *Op1 = readScalarOperand();
+      Value *Op2 = readScalarOperand();
+      if (Predicate >= CmpInst::FIRST_ICMP_PREDICATE &&
+          Predicate <= CmpInst::LAST_ICMP_PREDICATE) {
+        return new ICmpInst(*CurrentBB, Predicate, Op1, Op2);
+      } else {
+        report_fatal_error("Bad comparison predicate");
+      }
+    }
     default:
       report_fatal_error("Unrecognized instruction opcode");
   }

@@ -114,6 +114,7 @@ define i32 @get_thread_pointer() {
 }
 
 define void @arith(i16 %x, i16 %y) {
+  ; BinaryOperators
   add i16 %x, %y
   sub i16 %x, %y
   mul i16 %x, %y
@@ -125,6 +126,11 @@ define void @arith(i16 %x, i16 %y) {
   and i16 %x, %y
   or i16 %x, %y
   xor i16 %x, %y
+
+  ; Comparisons
+  icmp eq i16 %x, %y
+  icmp ne i16 %x, %y
+
   ret void
 }
 

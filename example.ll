@@ -65,3 +65,15 @@ define internal i16 @indirect_call(i32 %func, i64 %arg) {
   %result = call i16 %func.p(i64 %arg)
   ret i16 %result
 }
+
+define internal i32 @alloca_fixed() {
+  %ptr.p = alloca [10 x i8]
+  %ptr = ptrtoint [10 x i8]* %ptr.p to i32
+  ret i32 %ptr
+}
+
+define internal i32 @alloca_variable(i32 %size) {
+  %ptr.p = alloca [12 x i8], i32 %size
+  %ptr = ptrtoint [12 x i8]* %ptr.p to i32
+  ret i32 %ptr
+}

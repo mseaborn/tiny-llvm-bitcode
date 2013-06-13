@@ -62,6 +62,8 @@ namespace Opcodes {
     INST_RET_VALUE,
     INST_LOAD,
     INST_STORE,
+    INST_ALLOCA_FIXED,
+    INST_ALLOCA_VARIABLE,
     INST_CALL,
     INST_BR_UNCOND,
     INST_BR_COND,
@@ -256,6 +258,20 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       writeOperand(Store->getOperand(1));
       break;
     }
+    case Instruction::Alloca: {
+      // TODO: Handle "align".
+      AllocaInst *Alloca = cast<AllocaInst>(Inst);
+      ArrayType *Ty = dyn_cast<ArrayType>(Alloca->getType()->getElementType());
+      if (!Ty || !Ty->getElementType()->isIntegerTy(8))
+        report_fatal_error("Non-i8-array alloca");
+      Stream->writeInt((Alloca->isArrayAllocation() ?
+                        Opcodes::INST_ALLOCA_VARIABLE :
+                        Opcodes::INST_ALLOCA_FIXED), "opcode");
+      Stream->writeInt(Ty->getNumElements(), "alloca_size");
+      if (Alloca->isArrayAllocation())
+        writeOperand(Alloca->getArraySize());
+      break;
+    }
     case Instruction::Call: {
       CallInst *Call = cast<CallInst>(Inst);
       // TODO: Handle "tail" attribute.
@@ -420,6 +436,17 @@ void FunctionReader::read() {
         Value *Val = readScalarOperand();
         Value *Ptr = readPtrOperand(Val->getType());
         NewInst = new StoreInst(Val, Ptr, CurrentBB);
+        break;
+      }
+      case Opcodes::INST_ALLOCA_FIXED:
+      case Opcodes::INST_ALLOCA_VARIABLE: {
+        uint32_t TypeSize = Stream->readInt("alloca_size");
+        Type *I8Ty = IntegerType::get(Func->getContext(), 8);
+        Type *Ty = ArrayType::get(I8Ty, TypeSize);
+        Value *ArraySize = NULL;
+        if (Opcode == Opcodes::INST_ALLOCA_VARIABLE)
+          ArraySize = readScalarOperand();
+        NewInst = new AllocaInst(Ty, ArraySize, "", CurrentBB);
         break;
       }
       case Opcodes::INST_CALL: {

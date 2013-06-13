@@ -241,6 +241,7 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       break;
     }
     case Instruction::Load: {
+      // TODO: Handle "align", "volatile" and atomic attributes.
       LoadInst *Load = cast<LoadInst>(Inst);
       Stream->writeInt(Opcodes::INST_LOAD, "opcode");
       WriteType(Stream, Load->getType());
@@ -248,6 +249,7 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       break;
     }
     case Instruction::Store: {
+      // TODO: Handle "align", "volatile" and atomic attributes.
       StoreInst *Store = cast<StoreInst>(Inst);
       Stream->writeInt(Opcodes::INST_STORE, "opcode");
       writeOperand(Store->getOperand(0));
@@ -256,6 +258,7 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
     }
     case Instruction::Call: {
       CallInst *Call = cast<CallInst>(Inst);
+      // TODO: Handle "tail" attribute.
       // TODO: Add a separate opcode for direct calls.  In that case,
       // we won't need to output the return type and the argument
       // count.

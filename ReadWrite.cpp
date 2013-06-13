@@ -234,6 +234,15 @@ public:
     assert(hasIDForValue(Val));
     return ValueToID[Val];
   }
+  void addGlobals(Module *M) {
+    for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F) {
+      addIDForValue(F);
+    }
+    for (Module::global_iterator GV = M->global_begin(), E = M->global_end();
+         GV != E; ++GV) {
+      addIDForValue(GV);
+    }
+  }
 };
 
 class FunctionWriter {
@@ -272,16 +281,9 @@ void FunctionWriter::allocateEarlyValueIDs() {
   uint32_t NextBasicBlockID = 0;
   NextFwdRefID = 0;
 
-  // Add globals to ValueMap.  TODO: For efficiency, do this once per
-  // module rather than once per function.
-  Module *M = Func->getParent();
-  for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F) {
-    ValueMap.addIDForValue(F);
-  }
-  for (Module::global_iterator GV = M->global_begin(), E = M->global_end();
-       GV != E; ++GV) {
-    ValueMap.addIDForValue(GV);
-  }
+  // TODO: For efficiency, add globals once per module rather than
+  // once per function.
+  ValueMap.addGlobals(Func->getParent());
   // Allocate value IDs for the function's arguments.
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
        Arg != E; ++Arg) {
@@ -580,13 +582,15 @@ void FunctionWriter::write() {
   }
 }
 
+typedef SmallVector<Value *, 64> ReaderValueList;
+
 class FunctionReader {
   InputStream *Stream;
   Function *Func;
   Type *IntPtrType;
   uint32_t BBCount;
   SmallVector<BasicBlock *, 10> BasicBlocks;
-  SmallVector<Value *, 64> ValueList;
+  ReaderValueList ValueList;
   BasicBlock *CurrentBB;
 
   SmallVector<Value *, 16> FwdRefs;
@@ -822,6 +826,16 @@ Value *FunctionReader::readInstruction() {
   }
 }
 
+static void addGlobalsToValueList(ReaderValueList *ValueList, Module *M) {
+  for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F) {
+    ValueList->push_back(F);
+  }
+  for (Module::global_iterator GV = M->global_begin(), E = M->global_end();
+       GV != E; ++GV) {
+    ValueList->push_back(GV);
+  }
+}
+
 void FunctionReader::read() {
   Stream->readMarker("function_def_start");
   BBCount = Stream->readInt("basic_block_count");
@@ -834,16 +848,9 @@ void FunctionReader::read() {
     BasicBlocks.push_back(BasicBlock::Create(Func->getContext(), "", Func));
   }
 
-  // Add globals to ValueList.  TODO: For efficiency, do this once per
-  // module rather than once per function.
-  Module *M = Func->getParent();
-  for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F) {
-    ValueList.push_back(F);
-  }
-  for (Module::global_iterator GV = M->global_begin(), E = M->global_end();
-       GV != E; ++GV) {
-    ValueList.push_back(GV);
-  }
+  // TODO: For efficiency, add globals once per module rather than
+  // once per function.
+  addGlobalsToValueList(&ValueList, Func->getParent());
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
        Arg != E; ++Arg) {
     ValueList.push_back(Arg);
@@ -877,6 +884,13 @@ class FlattenedConstant {
   uint32_t Offset;
   uint32_t Size;
 
+  struct Reloc {
+    unsigned RelOffset;
+    GlobalValue *GlobalRef;
+  };
+  typedef SmallVector<Reloc, 10> RelocArray;
+  RelocArray Relocs;
+
   void writeSimpleElement(Constant *C) {
     if (ArrayType *Ty = dyn_cast<ArrayType>(C->getType())) {
       assert(Ty->getElementType()->isIntegerTy(8));
@@ -889,6 +903,17 @@ class FlattenedConstant {
         memcpy(Buf + Offset, Data.data(), Size);
       }
       Offset += Size;
+      return;
+    }
+    if (C->getType()->isIntegerTy(32)) {
+      ConstantExpr *CE = dyn_cast<ConstantExpr>(C);
+      assert(CE);
+      assert(CE->getOpcode() == Instruction::PtrToInt);
+      GlobalValue *GV = dyn_cast<GlobalValue>(CE->getOperand(0));
+      assert(GV);
+      Reloc NewRel = { Offset, GV };
+      Relocs.push_back(NewRel);
+      Offset += sizeof(uint32_t);
       return;
     }
     errs() << "Value: " << *C << "\n";
@@ -906,10 +931,19 @@ public:
     delete[] Buf;
   }
 
-  void write(OutputStream *Stream) {
+  void write(OutputStream *Stream, ValueWriterMap *ValueMap) {
     // TODO: Write bulk data more efficiently than this.
     for (unsigned I = 0; I < Size; ++I)
       Stream->writeInt(Buf[I], "byte");
+    // Write relocations.
+    Stream->writeInt(Relocs.size(), "reloc_count");
+    for (RelocArray::iterator Rel = Relocs.begin(), E = Relocs.end();
+         Rel != E; ++Rel) {
+      // TODO: Use relative values to make the numbers smaller and
+      // more regular.
+      Stream->writeInt(Rel->RelOffset, "reloc_offset");
+      Stream->writeInt(ValueMap->getIDForValue(Rel->GlobalRef), "reloc_ref");
+    }
   }
 };
 
@@ -926,11 +960,16 @@ void WriteGlobal(OutputStream *Stream, GlobalVariable *GV) {
   Stream->writeInt(Size, "global_size");
   if (!IsZero) {
     FlattenedConstant Buffer(Size, GV->getInitializer());
-    Buffer.write(Stream);
+    ValueWriterMap ValueMap;
+    // Add globals to ValueMap.  TODO: For efficiency, do this once
+    // per module rather than once per function.
+    ValueMap.addGlobals(GV->getParent());
+    Buffer.write(Stream, &ValueMap);
   }
 }
 
-Constant *ReadGlobalInitializer(InputStream *Stream, LLVMContext &Context) {
+Constant *ReadGlobalInitializer(InputStream *Stream, LLVMContext &Context,
+                                ReaderValueList *ValueList) {
   bool IsZero = Stream->readInt("is_zero");
   uint32_t Size = Stream->readInt("global_size");
   if (IsZero) {
@@ -941,15 +980,35 @@ Constant *ReadGlobalInitializer(InputStream *Stream, LLVMContext &Context) {
   assert(Buf);
   for (unsigned I = 0; I < Size; ++I)
     Buf[I] = Stream->readInt("byte");
-  Constant *Init = ConstantDataArray::get(
-      Context, ArrayRef<uint8_t>(Buf, Buf + Size));
+
+  Constant *Init;
+  uint32_t RelocCount = Stream->readInt("reloc_count");
+  if (RelocCount == 0) {
+    Init = ConstantDataArray::get(Context, ArrayRef<uint8_t>(Buf, Buf + Size));
+  } else {
+    SmallVector<Constant *, 10> Elements;
+    unsigned PrevPos = 0;
+    Type *IntPtrType = GetIntPtrType(Context);
+    for (unsigned I = 0; I < RelocCount; ++I) {
+      uint32_t RelocOffset = Stream->readInt("reloc_offset");
+      uint32_t RelocValueID = Stream->readInt("reloc_ref");
+      Constant *BaseVal = cast<Constant>((*ValueList)[RelocValueID]);
+      Elements.push_back(ConstantExpr::getPtrToInt(BaseVal, IntPtrType));
+    }
+    if (Elements.size() == 1) {
+      Init = Elements[0];
+    } else {
+      Init = ConstantStruct::getAnon(Context, Elements, true);
+    }
+  }
   delete[] Buf;
   return Init;
 }
 
-Value *ReadGlobal(InputStream *Stream, Module *M) {
+GlobalVariable *ReadGlobal(InputStream *Stream, Module *M,
+                           ReaderValueList *ValueList) {
   bool IsConstant = Stream->readInt("is_constant");
-  Constant *Init = ReadGlobalInitializer(Stream, M->getContext());
+  Constant *Init = ReadGlobalInitializer(Stream, M->getContext(), ValueList);
   return new GlobalVariable(*M, Init->getType(), IsConstant,
                             GlobalValue::InternalLinkage,
                             Init, "");
@@ -957,33 +1016,53 @@ Value *ReadGlobal(InputStream *Stream, Module *M) {
 
 
 void WriteModule(OutputStream *Stream, Module *M) {
+  Stream->writeInt(M->getFunctionList().size(), "function_count");
+  for (Module::iterator Func = M->begin(), E = M->end(); Func != E; ++Func) {
+    WriteFunctionDecl(Stream, Func);
+  }
+
   Stream->writeInt(M->getGlobalList().size(), "global_count");
   for (Module::global_iterator GV = M->global_begin(), E = M->global_end();
        GV != E; ++GV) {
     WriteGlobal(Stream, GV);
   }
 
-  Stream->writeInt(M->getFunctionList().size(), "function_count");
-  for (Module::iterator Func = M->begin(), E = M->end(); Func != E; ++Func) {
-    WriteFunctionDecl(Stream, Func);
-  }
   for (Module::iterator Func = M->begin(), E = M->end(); Func != E; ++Func) {
     FunctionWriter(Stream, Func).write();
   }
 }
 
 void ReadModule(InputStream *Stream, Module *M) {
-  uint32_t GlobalCount = Stream->readInt("global_count");
-  for (unsigned I = 0; I < GlobalCount; ++I) {
-    ReadGlobal(Stream, M);
-  }
-
   uint32_t FuncCount = Stream->readInt("function_count");
   SmallVector<Function *, 10> FuncList;
   FuncList.reserve(FuncCount);
+  // Create a declaration for each function as a placeholder.
   for (unsigned I = 0; I < FuncCount; ++I) {
     FuncList.push_back(ReadFunctionDecl(Stream, M));
   }
+
+  uint32_t GlobalCount = Stream->readInt("global_count");
+  // Create a placeholder for each GlobalVariable so that relocations
+  // can refer to these placeholders.  Any type will do here.
+  Type *PlaceholderType = Type::getInt8Ty(M->getContext());
+  for (unsigned I = 0; I < GlobalCount; ++I) {
+    new GlobalVariable(*M, PlaceholderType, false,
+                       GlobalValue::ExternalLinkage, NULL);
+  }
+
+  // Fill in the definition of each GlobalVariable.
+  ReaderValueList ValueList;
+  addGlobalsToValueList(&ValueList, M);
+  for (unsigned I = 0; I < GlobalCount; ++I) {
+    GlobalVariable *Placeholder =
+        cast<GlobalVariable>(ValueList[FuncCount + I]);
+    GlobalVariable *RealGlobal = ReadGlobal(Stream, M, &ValueList);
+    Placeholder->replaceAllUsesWith(
+        ConstantExpr::getBitCast(RealGlobal, Placeholder->getType()));
+    Placeholder->eraseFromParent();
+  }
+
+  // Fill in the body of each function.
   for (unsigned I = 0; I < FuncCount; ++I) {
     FunctionReader(Stream, FuncList[I]).read();
   }

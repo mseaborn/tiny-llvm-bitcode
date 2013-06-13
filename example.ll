@@ -196,6 +196,8 @@ define void @casts(i32 %val) {
 @const_var = internal constant [123 x i8] zeroinitializer
 
 @data = internal global [4 x i8] c"foo!"
+@reloc_var = internal global i32 ptrtoint (i32* @reloc_var to i32)
+@reloc_func = internal global i32 ptrtoint (void ()* @empty to i32)
 
 define i32 @get_var_addr() {
   %ptr = ptrtoint [123 x i8]* @var to i32

@@ -69,9 +69,9 @@ namespace Opcodes {
     INST_BR_UNCOND,
     INST_BR_COND,
     // Binary operators
-    INST_ADD, INST_SUB, INST_MUL, INST_UDIV, INST_SDIV,
-    INST_SHL, INST_LSHR, INST_ASHR,
-    INST_AND, INST_OR, INST_XOR,
+#define HANDLE_BINARY_INST(LLVM_OP, WIRE_OP) WIRE_OP,
+#include "Instructions.def"
+#undef HANDLE_BINARY_INST
     // Pseudo-instructions.
     // FWD_REF(TYPE) creates a placeholder for a forward reference.
     INST_FWD_REF,
@@ -320,20 +320,13 @@ void FunctionWriter::writeBasicBlockOperand(BasicBlock *BB) {
 
 static Opcodes::InstOpcode getOpcodeToWrite(Instruction *Inst) {
   switch (Inst->getOpcode()) {
-    case Instruction::Add: return Opcodes::INST_ADD;
-    case Instruction::Sub: return Opcodes::INST_SUB;
-    case Instruction::Mul: return Opcodes::INST_MUL;
-    case Instruction::UDiv: return Opcodes::INST_UDIV;
-    case Instruction::SDiv: return Opcodes::INST_SDIV;
-    case Instruction::Shl: return Opcodes::INST_SHL;
-    case Instruction::LShr: return Opcodes::INST_LSHR;
-    case Instruction::AShr: return Opcodes::INST_ASHR;
-    case Instruction::And: return Opcodes::INST_AND;
-    case Instruction::Or: return Opcodes::INST_OR;
-    case Instruction::Xor: return Opcodes::INST_XOR;
+#define HANDLE_BINARY_INST(LLVM_OP, WIRE_OP) \
+    case Instruction::LLVM_OP: return Opcodes::WIRE_OP;
+#include "Instructions.def"
+#undef HANDLE_BINARY_INST
     default:
       errs() << "Instruction: " << *Inst << "\n";
-      report_fatal_error("Unhandled instruction type");
+      report_fatal_error("No opcode defined for instruction");
   }
 }
 
@@ -629,17 +622,12 @@ Value *FunctionReader::readInstruction() {
       uint64_t IntVal = Stream->readInt("constant_int");
       return ConstantInt::get(Ty, IntVal);
     }
-    case Opcodes::INST_ADD: return readBinOp(Instruction::Add);
-    case Opcodes::INST_SUB: return readBinOp(Instruction::Sub);
-    case Opcodes::INST_MUL: return readBinOp(Instruction::Mul);
-    case Opcodes::INST_UDIV: return readBinOp(Instruction::UDiv);
-    case Opcodes::INST_SDIV: return readBinOp(Instruction::SDiv);
-    case Opcodes::INST_SHL: return readBinOp(Instruction::Shl);
-    case Opcodes::INST_LSHR: return readBinOp(Instruction::LShr);
-    case Opcodes::INST_ASHR: return readBinOp(Instruction::AShr);
-    case Opcodes::INST_AND: return readBinOp(Instruction::And);
-    case Opcodes::INST_OR: return readBinOp(Instruction::Or);
-    case Opcodes::INST_XOR: return readBinOp(Instruction::Xor);
+
+#define HANDLE_BINARY_INST(LLVM_OP, WIRE_OP) \
+    case Opcodes::WIRE_OP: return readBinOp(Instruction::LLVM_OP);
+#include "Instructions.def"
+#undef HANDLE_BINARY_INST
+
     default:
       report_fatal_error("Unrecognized instruction opcode");
   }

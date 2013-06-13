@@ -98,7 +98,7 @@ Operation:
     // FWD_DEF of N replaces the Nth FWD_REF placeholder with the
     // previous instruction.
     INST_FWD_DEF -> fwd_ref_id
-    INST_CONSTANT_INT -> constant_int
+    INST_CONSTANT_INT -> type constant_int
 
 Phi_entry:
   basic_block_id

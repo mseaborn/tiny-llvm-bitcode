@@ -207,6 +207,8 @@ Function *ReadFunctionDecl(InputStream *Stream, Module *M) {
   if (StringRef(FuncName).startswith("llvm.memcpy.")) {
     ArgTypes[0] = PtrTy;
     ArgTypes[1] = PtrTy;
+  } else if (StringRef(FuncName).startswith("llvm.memset.")) {
+    ArgTypes[0] = PtrTy;
   } else if (FuncName == "llvm.nacl.read.tp") {
     ReturnType = PtrTy;
   }

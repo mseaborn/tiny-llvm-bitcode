@@ -141,7 +141,10 @@ define internal i32 @const_int() {
   ret i32 123
 }
 
+; Test that we can declare intrinsics and that their pointer types are
+; preserved.
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)
+declare void @llvm.memset.p0i8.i32(i8* nocapture, i8, i32, i32, i1)
 
 define internal void @call_memcpy(i32 %dest, i32 %src, i32 %size) {
   %dest.p = inttoptr i32 %dest to i8*

@@ -932,7 +932,14 @@ public:
   FlattenedConstant(uint32_t Size, Constant *C): Offset(0), Size(Size) {
     Buf = new uint8_t[Size];
     memset(Buf, 0, Size);
-    writeSimpleElement(C);
+    if (ConstantStruct *CS = dyn_cast<ConstantStruct>(C)) {
+      assert(CS->getType()->isPacked());
+      assert(!CS->getType()->hasName());
+      for (unsigned I = 0; I < CS->getNumOperands(); ++I)
+        writeSimpleElement(CS->getOperand(I));
+    } else {
+      writeSimpleElement(C);
+    }
     assert(Offset == Size);
   }
   ~FlattenedConstant() {
@@ -945,12 +952,12 @@ public:
       Stream->writeInt(Buf[I], "byte");
     // Write relocations.
     Stream->writeInt(Relocs.size(), "reloc_count");
+    uint32_t PrevPos = 0;
     for (RelocArray::iterator Rel = Relocs.begin(), E = Relocs.end();
          Rel != E; ++Rel) {
-      // TODO: Use relative values to make the numbers smaller and
-      // more regular.
-      Stream->writeInt(Rel->RelOffset, "reloc_offset");
+      Stream->writeInt(Rel->RelOffset - PrevPos, "reloc_offset");
       Stream->writeInt(ValueMap->getIDForValue(Rel->GlobalRef), "reloc_ref");
+      PrevPos = Rel->RelOffset + sizeof(uint32_t);
     }
   }
 };
@@ -996,16 +1003,27 @@ Constant *ReadGlobalInitializer(InputStream *Stream, LLVMContext &Context,
   } else {
     SmallVector<Constant *, 10> Elements;
     Type *IntPtrType = GetIntPtrType(Context);
+    uint32_t PrevPos = 0;
     for (unsigned I = 0; I < RelocCount; ++I) {
       uint32_t RelocOffset = Stream->readInt("reloc_offset");
+      assert(PrevPos + RelocOffset <= Size);
+      if (RelocOffset > 0) {
+        ArrayRef<uint8_t> Slice(Buf + PrevPos, Buf + PrevPos + RelocOffset);
+        Elements.push_back(ConstantDataArray::get(Context, Slice));
+      }
       uint32_t RelocValueID = Stream->readInt("reloc_ref");
       Constant *BaseVal = cast<Constant>((*ValueList)[RelocValueID]);
       Constant *Val = ConstantExpr::getPtrToInt(BaseVal, IntPtrType);
       // This assumes little endian.
-      uint32_t Addend = *(uint32_t *) (Buf + RelocOffset);
+      uint32_t Addend = *(uint32_t *) (Buf + PrevPos + RelocOffset);
       if (Addend)
         Val = ConstantExpr::getAdd(Val, ConstantInt::get(IntPtrType, Addend));
       Elements.push_back(Val);
+      PrevPos += RelocOffset + sizeof(uint32_t);
+    }
+    if (PrevPos < Size) {
+      ArrayRef<uint8_t> Slice(Buf + PrevPos, Buf + Size);
+      Elements.push_back(ConstantDataArray::get(Context, Slice));
     }
     if (Elements.size() == 1) {
       Init = Elements[0];

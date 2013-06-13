@@ -201,6 +201,13 @@ define void @casts(i32 %val) {
 
 @addend_ptr = internal global i32 add (i32 ptrtoint (i32* @reloc_var to i32), i32 1)
 
+@compound = internal global <{ [3 x i8], i32, [5 x i8], i32, [5 x i8] }>
+    <{ [3 x i8] c"foo",
+       i32 ptrtoint (void ()* @empty to i32),
+       [5 x i8] c"data1",
+       i32 ptrtoint (void ()* @unconditional_branch to i32),
+       [5 x i8] c"data2" }>
+
 define i32 @get_var_addr() {
   %ptr = ptrtoint [123 x i8]* @var to i32
   ret i32 %ptr

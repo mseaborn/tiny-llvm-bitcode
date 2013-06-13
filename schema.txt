@@ -1,0 +1,167 @@
+
+This is a semi-formal grammar for the IR format.
+
+This grammar uses the following conventions:
+
+ * Names capitalized as "Foo" are non-terminals.
+
+ * Names capitalized as "foo" are terminal fields.  Currently, these
+   are arbitrary-size integers that are encoded using LEB128.
+   (See http://en.wikipedia.org/wiki/LEB128)
+
+ * "repeat: foo_count * Foo" means that Foo is repeated foo_count
+   times, where foo_count is a terminal field within the same
+   non-terminal.
+
+
+// Overall structure of the module:
+
+Module:
+  function_count
+  repeat: function_count * Function_decl
+  global_count
+  repeat: global_count * Global_var_def
+  repeat: function_count * Function_def
+
+
+// Global variables use the following records:
+
+Global_var_def:
+  is_constant  // 1 if the variable should be in read-only memory
+  is_zero  // 1 if variable is zero-initialized
+  global_size  // Size of the variable in bytes
+  // The variable's contents are defined by an array of bytes and
+  // array of relocations:
+  if !is_zero:
+    repeat: global_size * char
+    reloc_count
+    repeat: reloc_count * Reloc
+
+// "reloc_offset" gives the offset, in bytes, of this relocation from
+// the end of the previous relocation.
+Reloc:
+  reloc_offset
+  reloc_ref  // An ID for a GlobalValue
+
+
+// Functions use the following records:
+
+// Forward declaration for a function, specifying its type but not its body.
+Function_decl:
+  is_external  // TODO: Want to remove this when externs are disallowed
+  if is_external:
+    String  // Name of function
+  type  // Return type of function
+  arg_count
+  repeat: arg_count * Type
+
+String:
+  string_length
+  repeat: string_length * char
+
+Function_def:
+  basic_block_count
+  // TODO: Change the implementation to do the following:
+  repeat: basic_block_count * Basic_block
+
+Basic_block:
+  operation_count
+  repeat: operation_count * Operation
+  Terminator_op
+
+// 'Operation' usually encodes an instruction, but it is also used to
+// encode forward references (which are made explicit) and
+// ConstantInts.
+Operation:
+  opcode
+  tagged_variant(opcode):
+    INST_LOAD -> type val
+    INST_STORE -> val val  // Type is implied by value's type
+    INST_ATOMICRMW -> val val val
+    INST_ALLOCA_FIXED -> alloca_size
+    INST_ALLOCA_VARIABLE -> alloca_size val
+    INST_CALL ->
+      val  // Function callee value
+      type  // Return type
+      argument_count
+      repeat: argument_count * val
+    INST_SELECT -> val val val
+    INST_PHI ->
+      phi_size  // Number of incoming blocks - 1
+      Phi_entry
+      repeat: phi_size * Phi_entry
+    INST_ADD, INST_SUB, ... -> val val  // Binary operators
+    INST_CMP -> predicate val val
+    INST_CAST -> cast_opcode type val
+    // FWD_REF creates a placeholder for a forward reference.
+    INST_FWD_REF -> type
+    // FWD_DEF of N replaces the Nth FWD_REF placeholder with the
+    // previous instruction.
+    INST_FWD_DEF -> fwd_ref_id
+    INST_CONSTANT_INT -> constant_int
+
+Phi_entry:
+  basic_block_id
+  val
+
+// TODO: Change the implementation to separate Operation and
+// Terminator_op, as described here.
+Terminator_op:
+  terminator_opcode
+  tagged_variant(terminator_opcode):
+    INST_RET_VOID -> (none)
+    INST_RET_VALUE -> val
+    INST_BR_UNCOND -> basic_block_id
+    INST_BR_COND -> basic_block_id basic_block_id val
+    INST_SWITCH ->
+      val  // Condition value
+      basic_block_id  // Default destination of switch
+      case_count
+      repeat: case_count * Switch_case
+    INST_UNREACHABLE -> (none)
+
+// Note that this does not support case ranges
+Switch_case:
+  case_val
+  basic_block_id
+
+
+// Enumerations
+
+type: enum of:
+    TYPE_I32
+    TYPE_I1
+    TYPE_I8
+    TYPE_I16
+    TYPE_I64
+    TYPE_VOID
+    TYPE_FLOAT
+    TYPE_DOUBLE
+
+opcode: enum of:
+    INST_LOAD
+    INST_STORE
+    INST_ATOMICRMW
+    INST_ALLOCA_FIXED
+    INST_ALLOCA_VARIABLE
+    INST_CALL
+    INST_SELECT
+    INST_PHI
+    INST_ADD, INST_SUB, ...  // Binary operators (see Instructions.def)
+    INST_CMP
+    INST_CAST
+    // Pseudo-instructions:
+    // FWD_REF(TYPE) creates a placeholder for a forward reference.
+    INST_FWD_REF
+    // FWD_DEF(N) replaces the Nth FWD_REF placeholder with the
+    // previous instruction.
+    INST_FWD_DEF
+    INST_CONSTANT_INT
+
+terminator_opcode: enum of:
+    INST_RET_VOID
+    INST_RET_VALUE
+    INST_BR_UNCOND
+    INST_BR_COND
+    INST_SWITCH
+    INST_UNREACHABLE

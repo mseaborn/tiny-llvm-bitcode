@@ -121,3 +121,6 @@ define void @arith(i16 %x, i16 %y) {
   sdiv i16 %x, %y
   ret void
 }
+
+@var = internal global [123 x i8] zeroinitializer
+@const_var = internal constant [123 x i8] zeroinitializer

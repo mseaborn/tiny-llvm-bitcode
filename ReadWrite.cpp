@@ -3,6 +3,7 @@
 #include <stdint.h> // XXX
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -661,7 +662,32 @@ void FunctionReader::read() {
 }
 
 
+void WriteGlobal(OutputStream *Stream, GlobalVariable *GV) {
+  // Use DataLayout as a convenience for getTypeAllocSize().
+  // TODO: Handle "align" attribute.
+  DataLayout DL("");
+  Type *Ty = GV->getType()->getPointerElementType();
+  Stream->writeInt(DL.getTypeAllocSize(Ty), "global_size");
+  Stream->writeInt(GV->isConstant(), "is_constant");
+}
+
+Value *ReadGlobal(InputStream *Stream, Module *M) {
+  uint32_t Size = Stream->readInt("global_size");
+  bool IsConstant = Stream->readInt("is_constant");
+  Type *Ty = ArrayType::get(Type::getInt8Ty(M->getContext()), Size);
+  Constant *Init = ConstantAggregateZero::get(Ty);
+  return new GlobalVariable(*M, Ty, IsConstant, GlobalValue::InternalLinkage,
+                            Init, "");
+}
+
+
 void WriteModule(OutputStream *Stream, Module *M) {
+  Stream->writeInt(M->getGlobalList().size(), "global_count");
+  for (Module::global_iterator GV = M->global_begin(), E = M->global_end();
+       GV != E; ++GV) {
+    WriteGlobal(Stream, GV);
+  }
+
   Stream->writeInt(M->getFunctionList().size(), "function_count");
   for (Module::iterator Func = M->begin(), E = M->end(); Func != E; ++Func) {
     WriteFunctionDecl(Stream, Func);
@@ -672,6 +698,11 @@ void WriteModule(OutputStream *Stream, Module *M) {
 }
 
 void ReadModule(InputStream *Stream, Module *M) {
+  uint32_t GlobalCount = Stream->readInt("global_count");
+  for (unsigned I = 0; I < GlobalCount; ++I) {
+    ReadGlobal(Stream, M);
+  }
+
   uint32_t FuncCount = Stream->readInt("function_count");
   SmallVector<Function *, 10> FuncList;
   FuncList.reserve(FuncCount);

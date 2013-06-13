@@ -129,3 +129,10 @@ define i32 @get_var_addr() {
   %ptr = ptrtoint [123 x i8]* @var to i32
   ret i32 %ptr
 }
+
+define i32 @cast_of_var_addr() {
+  ; bitcasts of globals are allowed.
+  %bc = bitcast [123 x i8]* @var to i32*
+  %val1 = load i32* %bc
+  ret i32 %val1
+}

@@ -39,3 +39,11 @@ echo PASS: .ll files are the same
 # Sanity check: re-check syntax and run verifier pass.
 # This is redundant after the diff test.
 $llvm_bin/opt out/example.bc.ll -S > /dev/null
+
+# Could do the following command here, but bash doesn't make failures
+# in Freeze fatal:
+#   ./out/Freeze non_canonical.ll | ./out/Thaw
+./out/Freeze non_canonical.ll > out/non_canonical.bc
+./out/Thaw < out/non_canonical.bc > out/non_canonical.bc.ll
+$llvm_bin/opt out/non_canonical.bc.ll -S > /dev/null
+echo PASS: non_canonical.ll works

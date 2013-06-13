@@ -267,10 +267,15 @@ void FunctionWriter::allocateEarlyValueIDs() {
 }
 
 static Value *stripPtrCasts(Value *Val) {
-  if (IntToPtrInst *Cast = dyn_cast<IntToPtrInst>(Val)) {
-    Val = Cast->getOperand(0);
-  } else if (PtrToIntInst *Cast = dyn_cast<PtrToIntInst>(Val)) {
-    Val = Cast->getOperand(0);
+  if (BitCastInst *Cast = dyn_cast<BitCastInst>(Val)) {
+    if (Cast->getType()->isPointerTy()) {
+      Val = Cast->getOperand(0);
+    }
+  } else {
+    if (IntToPtrInst *Cast = dyn_cast<IntToPtrInst>(Val))
+      Val = Cast->getOperand(0);
+    if (PtrToIntInst *Cast = dyn_cast<PtrToIntInst>(Val))
+      Val = Cast->getOperand(0);
   }
   return Val;
 }
@@ -405,6 +410,7 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
     }
     case Instruction::IntToPtr:
     case Instruction::PtrToInt:
+    case Instruction::BitCast:
       // These casts are implicit.
       break;
     default:
@@ -489,8 +495,11 @@ Value *FunctionReader::readRawOperand() {
 // coerces Val to be a pointer-to-Ty.
 Value *FunctionReader::castOperand(Value *Val, Type *Ty) {
   if (Ty) {
-    if (!Val->getType()->isPointerTy())
+    if (Val->getType()->isPointerTy()) {
+      Val = new BitCastInst(Val, Ty->getPointerTo(), "", CurrentBB);
+    } else {
       Val = new IntToPtrInst(Val, Ty->getPointerTo(), "", CurrentBB);
+    }
   } else {
     if (Val->getType()->isPointerTy())
       Val = new PtrToIntInst(Val, IntPtrType, "", CurrentBB);

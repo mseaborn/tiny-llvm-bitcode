@@ -199,6 +199,8 @@ define void @casts(i32 %val) {
 @reloc_var = internal global i32 ptrtoint (i32* @reloc_var to i32)
 @reloc_func = internal global i32 ptrtoint (void ()* @empty to i32)
 
+@addend_ptr = internal global i32 add (i32 ptrtoint (i32* @reloc_var to i32), i32 1)
+
 define i32 @get_var_addr() {
   %ptr = ptrtoint [123 x i8]* @var to i32
   ret i32 %ptr

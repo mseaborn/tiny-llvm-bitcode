@@ -908,6 +908,14 @@ class FlattenedConstant {
     if (C->getType()->isIntegerTy(32)) {
       ConstantExpr *CE = dyn_cast<ConstantExpr>(C);
       assert(CE);
+      if (CE->getOpcode() == Instruction::Add) {
+        ConstantInt *Addend = dyn_cast<ConstantInt>(CE->getOperand(1));
+        assert(Addend);
+        // This assumes little endian.
+        *(uint32_t *) (Buf + Offset) = Addend->getZExtValue();
+        CE = dyn_cast<ConstantExpr>(CE->getOperand(0));
+        assert(CE);
+      }
       assert(CE->getOpcode() == Instruction::PtrToInt);
       GlobalValue *GV = dyn_cast<GlobalValue>(CE->getOperand(0));
       assert(GV);
@@ -987,13 +995,17 @@ Constant *ReadGlobalInitializer(InputStream *Stream, LLVMContext &Context,
     Init = ConstantDataArray::get(Context, ArrayRef<uint8_t>(Buf, Buf + Size));
   } else {
     SmallVector<Constant *, 10> Elements;
-    unsigned PrevPos = 0;
     Type *IntPtrType = GetIntPtrType(Context);
     for (unsigned I = 0; I < RelocCount; ++I) {
       uint32_t RelocOffset = Stream->readInt("reloc_offset");
       uint32_t RelocValueID = Stream->readInt("reloc_ref");
       Constant *BaseVal = cast<Constant>((*ValueList)[RelocValueID]);
-      Elements.push_back(ConstantExpr::getPtrToInt(BaseVal, IntPtrType));
+      Constant *Val = ConstantExpr::getPtrToInt(BaseVal, IntPtrType);
+      // This assumes little endian.
+      uint32_t Addend = *(uint32_t *) (Buf + RelocOffset);
+      if (Addend)
+        Val = ConstantExpr::getAdd(Val, ConstantInt::get(IntPtrType, Addend));
+      Elements.push_back(Val);
     }
     if (Elements.size() == 1) {
       Init = Elements[0];
@@ -1054,12 +1066,13 @@ void ReadModule(InputStream *Stream, Module *M) {
   ReaderValueList ValueList;
   addGlobalsToValueList(&ValueList, M);
   for (unsigned I = 0; I < GlobalCount; ++I) {
-    GlobalVariable *Placeholder =
-        cast<GlobalVariable>(ValueList[FuncCount + I]);
+    uint32_t Idx = FuncCount + I;
+    GlobalVariable *Placeholder = cast<GlobalVariable>(ValueList[Idx]);
     GlobalVariable *RealGlobal = ReadGlobal(Stream, M, &ValueList);
     Placeholder->replaceAllUsesWith(
         ConstantExpr::getBitCast(RealGlobal, Placeholder->getType()));
     Placeholder->eraseFromParent();
+    ValueList[Idx] = RealGlobal;
   }
 
   // Fill in the body of each function.

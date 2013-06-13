@@ -42,6 +42,11 @@ define internal void @unreachable() {
   unreachable
 }
 
+define internal i32 @select(i32 %val1, i32 %val2) {
+  %result = select i1 true, i32 %val1, i32 %val2
+  ret i32 %result
+}
+
 define internal i16 @forward_ref(i32 %ptr) {
   br label %bb1
 bb2:

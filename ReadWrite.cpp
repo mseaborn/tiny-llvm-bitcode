@@ -69,6 +69,7 @@ namespace Opcodes {
     INST_BR_UNCOND,
     INST_BR_COND,
     INST_UNREACHABLE,
+    INST_SELECT,
     // Binary operators
 #define HANDLE_BINARY_INST(LLVM_OP, WIRE_OP) WIRE_OP,
 #include "Instructions.def"
@@ -414,6 +415,12 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
     case Instruction::Unreachable:
       Stream->writeInt(Opcodes::INST_UNREACHABLE, "opcode");
       break;
+    case Instruction::Select:
+      Stream->writeInt(Opcodes::INST_SELECT, "opcode");
+      writeOperand(Inst->getOperand(0));
+      writeOperand(Inst->getOperand(1));
+      writeOperand(Inst->getOperand(2));
+      break;
     case Instruction::IntToPtr:
     case Instruction::PtrToInt:
     case Instruction::BitCast:
@@ -631,6 +638,12 @@ Value *FunctionReader::readInstruction() {
     }
     case Opcodes::INST_UNREACHABLE: {
       return new UnreachableInst(Func->getContext(), CurrentBB);
+    }
+    case Opcodes::INST_SELECT: {
+      Value *Op1 = readScalarOperand();
+      Value *Op2 = readScalarOperand();
+      Value *Op3 = readScalarOperand();
+      return SelectInst::Create(Op1, Op2, Op3, "", CurrentBB);
     }
     case Opcodes::INST_CONSTANT_INT: {
       Type *Ty = ReadType(Func->getContext(), Stream);

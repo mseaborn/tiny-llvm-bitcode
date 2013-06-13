@@ -38,6 +38,10 @@ iffalse:
   ret void
 }
 
+define internal void @unreachable() {
+  unreachable
+}
+
 define internal i16 @forward_ref(i32 %ptr) {
   br label %bb1
 bb2:

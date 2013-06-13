@@ -104,3 +104,5 @@ define internal void @call_memcpy(i32 %dest, i32 %src, i32 %size) {
   call void @llvm.memcpy.p0i8.p0i8.i32(i8* %dest.p, i8* %src.p, i32 %size, i32 1, i1 0)
   ret void
 }
+
+declare i8* @llvm.nacl.read.tp()

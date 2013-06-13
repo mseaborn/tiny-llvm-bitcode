@@ -130,6 +130,7 @@ void WriteString(OutputStream *Stream, const std::string &String) {
   for (unsigned I = 0, E = String.size(); I < E; ++I) {
     Stream->writeInt(String[I], "char");
   }
+  Stream->writeMarker(("string=" + String).c_str());
 }
 
 std::string ReadString(InputStream *Stream) {
@@ -140,12 +141,21 @@ std::string ReadString(InputStream *Stream) {
     // TODO: Avoid taking O(n^2) time.
     Str += C;
   }
+  Stream->readMarker(("string=" + Str).c_str());
   return Str;
 }
 
 
 IntegerType *GetIntPtrType(LLVMContext &Context) {
   return IntegerType::get(Context, 32);
+}
+
+// Convert pointer types in order to handle intrinsics.
+// TODO: Be stricter and allow this only for intrinsics.
+static Type *StripPtrType(Type *Ty) {
+  if (Ty->isPointerTy())
+    Ty = GetIntPtrType(Ty->getContext());
+  return Ty;
 }
 
 void WriteFunctionDecl(OutputStream *Stream, Function *Func) {
@@ -157,15 +167,10 @@ void WriteFunctionDecl(OutputStream *Stream, Function *Func) {
   }
 
   FunctionType *FTy = Func->getFunctionType();
-  WriteType(Stream, FTy->getReturnType());
+  WriteType(Stream, StripPtrType(FTy->getReturnType()));
   Stream->writeInt(FTy->getNumParams(), "arg_count");
   for (unsigned I = 0; I < FTy->getNumParams(); ++I) {
-    Type *ArgTy = FTy->getParamType(I);
-    // Convert pointer types in order to handle intrinsics.
-    // TODO: Allow this only for intrinsics.
-    if (ArgTy->isPointerTy())
-      ArgTy = GetIntPtrType(Func->getContext());
-    WriteType(Stream, ArgTy);
+    WriteType(Stream, StripPtrType(FTy->getParamType(I)));
   }
 }
 
@@ -186,10 +191,12 @@ Function *ReadFunctionDecl(InputStream *Stream, Module *M) {
     ArgTypes.push_back(ReadType(M->getContext(), Stream));
   }
   // Restore pointer arguments in intrinsics.
+  Type *PtrTy = IntegerType::get(M->getContext(), 8)->getPointerTo();
   if (StringRef(FuncName).startswith("llvm.memcpy.")) {
-    Type *PtrTy = IntegerType::get(M->getContext(), 8)->getPointerTo();
     ArgTypes[0] = PtrTy;
     ArgTypes[1] = PtrTy;
+  } else if (FuncName == "llvm.nacl.read.tp") {
+    ReturnType = PtrTy;
   }
   FunctionType *FTy = FunctionType::get(ReturnType, ArgTypes, false);
   return Function::Create(FTy, Linkage, FuncName, M);

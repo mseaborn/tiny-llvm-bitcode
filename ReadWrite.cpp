@@ -57,7 +57,7 @@ namespace Opcodes {
     TYPE_DOUBLE,
   };
 
-  enum Opcodes {
+  enum InstOpcode {
     INST_RET_VOID,
     INST_RET_VALUE,
     INST_LOAD,
@@ -67,6 +67,8 @@ namespace Opcodes {
     INST_CALL,
     INST_BR_UNCOND,
     INST_BR_COND,
+    // Binary operators
+    INST_ADD, INST_SUB, INST_MUL, INST_UDIV, INST_SDIV,
     // Pseudo-instructions.
     // FWD_REF(TYPE) creates a placeholder for a forward reference.
     INST_FWD_REF,
@@ -302,6 +304,19 @@ void FunctionWriter::writeBasicBlockOperand(BasicBlock *BB) {
   Stream->writeInt(BasicBlockMap[BB], "basic_block_ref");
 }
 
+static Opcodes::InstOpcode getOpcodeToWrite(Instruction *Inst) {
+  switch (Inst->getOpcode()) {
+    case Instruction::Add: return Opcodes::INST_ADD;
+    case Instruction::Sub: return Opcodes::INST_SUB;
+    case Instruction::Mul: return Opcodes::INST_MUL;
+    case Instruction::UDiv: return Opcodes::INST_UDIV;
+    case Instruction::SDiv: return Opcodes::INST_SDIV;
+    default:
+      errs() << "Instruction: " << *Inst << "\n";
+      report_fatal_error("Unhandled instruction type");
+  }
+}
+
 void FunctionWriter::writeInstruction(Instruction *Inst) {
   // First, ensure the instruction's operands have been allocated value IDs.
   for (unsigned I = 0, E = Inst->getNumOperands(); I < E; ++I) {
@@ -386,6 +401,12 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       // These casts are implicit.
       break;
     default:
+      if (BinaryOperator *Op = dyn_cast<BinaryOperator>(Inst)) {
+        Stream->writeInt(getOpcodeToWrite(Inst), "opcode");
+        writeOperand(Op->getOperand(0));
+        writeOperand(Op->getOperand(1));
+        break;
+      }
       errs() << "Instruction: " << *Inst << "\n";
       report_fatal_error("Unhandled instruction type");
   }
@@ -439,6 +460,7 @@ class FunctionReader {
   Value *readScalarOperand();
   Value *readPtrOperand(Type *Ty);
   BasicBlock *readBasicBlockOperand();
+  Value *readBinOp(Instruction::BinaryOps Opcode);
   Value *readInstruction();
 
 public:
@@ -482,6 +504,12 @@ BasicBlock *FunctionReader::readBasicBlockOperand() {
   uint32_t ID = Stream->readInt("basic_block_ref");
   assert(ID < BasicBlocks.size());
   return BasicBlocks[ID];
+}
+
+Value *FunctionReader::readBinOp(Instruction::BinaryOps Opcode) {
+  Value *Op1 = readScalarOperand();
+  Value *Op2 = readScalarOperand();
+  return BinaryOperator::Create(Opcode, Op1, Op2, "", CurrentBB);
 }
 
 Value *FunctionReader::readInstruction() {
@@ -577,6 +605,11 @@ Value *FunctionReader::readInstruction() {
       uint64_t IntVal = Stream->readInt("constant_int");
       return ConstantInt::get(Ty, IntVal);
     }
+    case Opcodes::INST_ADD: return readBinOp(Instruction::Add);
+    case Opcodes::INST_SUB: return readBinOp(Instruction::Sub);
+    case Opcodes::INST_MUL: return readBinOp(Instruction::Mul);
+    case Opcodes::INST_UDIV: return readBinOp(Instruction::UDiv);
+    case Opcodes::INST_SDIV: return readBinOp(Instruction::SDiv);
     default:
       report_fatal_error("Unrecognized instruction opcode");
   }

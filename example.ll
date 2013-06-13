@@ -112,3 +112,12 @@ define i32 @get_thread_pointer() {
   %ptr = ptrtoint i8* %ptr.p to i32
   ret i32 %ptr
 }
+
+define void @arith(i16 %x, i16 %y) {
+  add i16 %x, %y
+  sub i16 %x, %y
+  mul i16 %x, %y
+  udiv i16 %x, %y
+  sdiv i16 %x, %y
+  ret void
+}

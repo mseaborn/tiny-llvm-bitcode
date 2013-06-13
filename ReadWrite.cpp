@@ -70,6 +70,7 @@ namespace Opcodes {
     INST_BR_COND,
     INST_UNREACHABLE,
     INST_SELECT,
+    INST_PHI,
     // Binary operators
 #define HANDLE_BINARY_INST(LLVM_OP, WIRE_OP) WIRE_OP,
 #include "Instructions.def"
@@ -421,6 +422,24 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       writeOperand(Inst->getOperand(1));
       writeOperand(Inst->getOperand(2));
       break;
+    case Instruction::PHI: {
+      PHINode *Phi = cast<PHINode>(Inst);
+      Stream->writeInt(Opcodes::INST_PHI, "opcode");
+      uint32_t Size = Phi->getNumIncomingValues();
+      // Empty phi nodes are not allowed.
+      assert(Size > 0);
+      // Reduce the size by 1 to make the numbers smaller, making this
+      // a tiny bit more compressible, and to remove the need for a
+      // check in the reader.
+      Stream->writeInt(Size - 1, "phi_size");
+      // TODO: Merge consecutive phi nodes together so that the basic
+      // block operands are not repeated.
+      for (unsigned I = 0; I < Size; ++I) {
+        writeBasicBlockOperand(Phi->getIncomingBlock(I));
+        writeOperand(Phi->getIncomingValue(I));
+      }
+      break;
+    }
     case Instruction::IntToPtr:
     case Instruction::PtrToInt:
     case Instruction::BitCast:
@@ -645,6 +664,20 @@ Value *FunctionReader::readInstruction() {
       Value *Op2 = readScalarOperand();
       Value *Op3 = readScalarOperand();
       return SelectInst::Create(Op1, Op2, Op3, "", CurrentBB);
+    }
+    case Opcodes::INST_PHI: {
+      uint32_t Size = Stream->readInt("phi_size") + 1;
+      // Read the first operand so that we know the type.
+      BasicBlock *BB1 = readBasicBlockOperand();
+      Value *Val1 = readScalarOperand();
+      PHINode *Phi = PHINode::Create(Val1->getType(), Size, "", CurrentBB);
+      Phi->addIncoming(Val1, BB1);
+      for (unsigned I = 1; I < Size; ++I) {
+        BasicBlock *BB = readBasicBlockOperand();
+        Value *Val = readScalarOperand();
+        Phi->addIncoming(Val, BB);
+      }
+      return Phi;
     }
     case Opcodes::INST_CONSTANT_INT: {
       Type *Ty = ReadType(Func->getContext(), Stream);

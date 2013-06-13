@@ -42,9 +42,20 @@ define internal void @unreachable() {
   unreachable
 }
 
-define internal i32 @select(i32 %val1, i32 %val2) {
-  %result = select i1 true, i32 %val1, i32 %val2
+define internal i32 @select(i1 %cond, i32 %val1, i32 %val2) {
+  %result = select i1 %cond, i32 %val1, i32 %val2
   ret i32 %result
+}
+
+define internal i32 @phi(i1 %cond) {
+  br i1 %cond, label %iftrue, label %iffalse
+iftrue:
+  br label %exit
+iffalse:
+  br label %exit
+exit:
+  %phi = phi i32 [ 123, %iftrue ], [ 456, %iffalse ]
+  ret i32 %phi
 }
 
 define internal i16 @forward_ref(i32 %ptr) {

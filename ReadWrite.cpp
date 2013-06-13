@@ -70,6 +70,8 @@ namespace Opcodes {
     INST_BR_COND,
     // Binary operators
     INST_ADD, INST_SUB, INST_MUL, INST_UDIV, INST_SDIV,
+    INST_SHL, INST_LSHR, INST_ASHR,
+    INST_AND, INST_OR, INST_XOR,
     // Pseudo-instructions.
     // FWD_REF(TYPE) creates a placeholder for a forward reference.
     INST_FWD_REF,
@@ -323,6 +325,12 @@ static Opcodes::InstOpcode getOpcodeToWrite(Instruction *Inst) {
     case Instruction::Mul: return Opcodes::INST_MUL;
     case Instruction::UDiv: return Opcodes::INST_UDIV;
     case Instruction::SDiv: return Opcodes::INST_SDIV;
+    case Instruction::Shl: return Opcodes::INST_SHL;
+    case Instruction::LShr: return Opcodes::INST_LSHR;
+    case Instruction::AShr: return Opcodes::INST_ASHR;
+    case Instruction::And: return Opcodes::INST_AND;
+    case Instruction::Or: return Opcodes::INST_OR;
+    case Instruction::Xor: return Opcodes::INST_XOR;
     default:
       errs() << "Instruction: " << *Inst << "\n";
       report_fatal_error("Unhandled instruction type");
@@ -626,6 +634,12 @@ Value *FunctionReader::readInstruction() {
     case Opcodes::INST_MUL: return readBinOp(Instruction::Mul);
     case Opcodes::INST_UDIV: return readBinOp(Instruction::UDiv);
     case Opcodes::INST_SDIV: return readBinOp(Instruction::SDiv);
+    case Opcodes::INST_SHL: return readBinOp(Instruction::Shl);
+    case Opcodes::INST_LSHR: return readBinOp(Instruction::LShr);
+    case Opcodes::INST_ASHR: return readBinOp(Instruction::AShr);
+    case Opcodes::INST_AND: return readBinOp(Instruction::And);
+    case Opcodes::INST_OR: return readBinOp(Instruction::Or);
+    case Opcodes::INST_XOR: return readBinOp(Instruction::Xor);
     default:
       report_fatal_error("Unrecognized instruction opcode");
   }

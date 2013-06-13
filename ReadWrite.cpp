@@ -536,27 +536,27 @@ Value *FunctionReader::readInstruction() {
       Value *Callee = readRawOperand();
       Type *ReturnType = ReadType(Func->getContext(), Stream);
       uint32_t ArgCount = Stream->readInt("argument_count");
-      Function *DirectFunc = dyn_cast<Function>(Callee);
-
       SmallVector<Value *, 10> Args;
-      SmallVector<Type *, 10> ArgTypes;
-      for (unsigned I = 0; I < ArgCount; ++I) {
-        Value *Arg;
+      if (Function *DirectFunc = dyn_cast<Function>(Callee)) {
         // Handle direct calls specially in order to handle intrinsics
         // that take pointer arguments.
-        if (DirectFunc &&
-            DirectFunc->getFunctionType()->getParamType(I)->isPointerTy()) {
-          Type *Ty = DirectFunc->getFunctionType()->getParamType(I);
-          Arg = readPtrOperand(Ty->getPointerElementType());
-        } else {
-          Arg = readScalarOperand();
+        // TODO: Produce a nicer error message if a function is
+        // direct-called with the wrong argument/return types.
+        for (unsigned I = 0; I < ArgCount; ++I) {
+          Type *ArgType = DirectFunc->getFunctionType()->getParamType(I);
+          if (ArgType->isPointerTy()) {
+            Args.push_back(readPtrOperand(ArgType->getPointerElementType()));
+          } else {
+            Args.push_back(readScalarOperand());
+          }
         }
-        Args.push_back(Arg);
-        ArgTypes.push_back(Arg->getType());
-      }
-      // TODO: Produce a nicer error message if a function is
-      // direct-called with the argument/return types.
-      if (!DirectFunc) {
+      } else {
+        SmallVector<Type *, 10> ArgTypes;
+        for (unsigned I = 0; I < ArgCount; ++I) {
+          Value *Arg = readScalarOperand();
+          Args.push_back(Arg);
+          ArgTypes.push_back(Arg->getType());
+        }
         Type *FuncTy = FunctionType::get(ReturnType, ArgTypes, false);
         Callee = castOperand(Callee, FuncTy);
       }

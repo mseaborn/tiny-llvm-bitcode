@@ -134,7 +134,7 @@ Function *ReadFunctionDecl(InputStream *Stream, Module *M) {
     ArgTypes.push_back(ReadType(M->getContext(), Stream));
   }
   FunctionType *FTy = FunctionType::get(ReturnType, ArgTypes, false);
-  return Function::Create(FTy, GlobalValue::ExternalLinkage, "", M);
+  return Function::Create(FTy, GlobalValue::InternalLinkage, "", M);
 }
 
 

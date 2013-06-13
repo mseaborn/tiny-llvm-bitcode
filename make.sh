@@ -30,5 +30,13 @@ $llvm_bin/opt example.ll -o out/example.o
 wc -c out/example.o
 wc -l out/example.bc
 # TODO: Thaw should write to stdout, not stderr
-./out/Thaw < out/example.bc 2>&1 | tee out/example.bc.ll
-$llvm_bin/opt out/example.bc.ll -S
+./out/Thaw < out/example.bc > out/example.bc.ll 2>&1
+
+$llvm_bin/opt example.ll -strip -S \
+    | grep -v '; ModuleID =' > out/example.ll.orig
+diff -u out/example.ll.orig out/example.bc.ll
+echo PASS: .ll files are the same
+
+# Sanity check: re-check syntax and run verifier pass.
+# This is redundant after the diff test.
+$llvm_bin/opt out/example.bc.ll -S > /dev/null

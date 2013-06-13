@@ -250,6 +250,10 @@ void FunctionWriter::allocateEarlyValueIDs() {
   for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F) {
     ValueMap[F] = NextValueID++;
   }
+  for (Module::global_iterator GV = M->global_begin(), E = M->global_end();
+       GV != E; ++GV) {
+    ValueMap[GV] = NextValueID++;
+  }
   // Allocate value IDs for the function's arguments.
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
        Arg != E; ++Arg) {
@@ -277,6 +281,8 @@ void FunctionWriter::materializeOperand(Value *Val) {
   Val = stripPtrCasts(Val);
   if (isa<BasicBlock>(Val) || ValueMap.count(Val) == 1)
     return;
+  // GlobalValues should already be in ValueMap.
+  assert(!isa<GlobalValue>(Val));
   if (ConstantInt *C = dyn_cast<ConstantInt>(Val)) {
     Stream->writeInt(Opcodes::INST_CONSTANT_INT, "opcode");
     // TODO: Could we omit the type here to save space?
@@ -633,6 +639,10 @@ void FunctionReader::read() {
   Module *M = Func->getParent();
   for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F) {
     ValueList.push_back(F);
+  }
+  for (Module::global_iterator GV = M->global_begin(), E = M->global_end();
+       GV != E; ++GV) {
+    ValueList.push_back(GV);
   }
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
        Arg != E; ++Arg) {

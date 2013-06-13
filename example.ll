@@ -92,4 +92,8 @@ define internal i32 @alloca_variable(i32 %size) {
   ret i32 %ptr
 }
 
+define internal i32 @const_int() {
+  ret i32 123
+}
+
 declare void @llvm.memcpy.p0i8.p0i8.i32(i8*, i8*, i32, i32, i1)

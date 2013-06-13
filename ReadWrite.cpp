@@ -73,6 +73,7 @@ namespace Opcodes {
     // FWD_DEF(N) replaces the Nth FWD_REF placeholder with the
     // previous instruction.
     INST_FWD_DEF,
+    INST_CONSTANT_INT,
   };
 };
 
@@ -265,14 +266,20 @@ static Value *stripPtrCasts(Value *Val) {
 // to the output stream if necessary.
 void FunctionWriter::materializeOperand(Value *Val) {
   Val = stripPtrCasts(Val);
-  if (!isa<BasicBlock>(Val) &&
-      !isa<Constant>(Val) &&
-      ValueMap.count(Val) != 1) {
-    Stream->writeInt(Opcodes::INST_FWD_REF, "opcode");
-    WriteType(Stream, Val->getType());
+  if (isa<BasicBlock>(Val) || ValueMap.count(Val) == 1)
+    return;
+  if (ConstantInt *C = dyn_cast<ConstantInt>(Val)) {
+    Stream->writeInt(Opcodes::INST_CONSTANT_INT, "opcode");
+    // TODO: Could we omit the type here to save space?
+    WriteType(Stream, C->getType());
+    Stream->writeInt(C->getZExtValue(), "constant_int");
     ValueMap[Val] = NextValueID++;
-    FwdRefs[Val] = NextFwdRefID++;
+    return;
   }
+  Stream->writeInt(Opcodes::INST_FWD_REF, "opcode");
+  WriteType(Stream, Val->getType());
+  ValueMap[Val] = NextValueID++;
+  FwdRefs[Val] = NextFwdRefID++;
 }
 
 void FunctionWriter::writeOperand(Value *Val) {
@@ -534,6 +541,11 @@ Value *FunctionReader::readInstruction() {
       BasicBlock *BBIfFalse = readBasicBlockOperand();
       Value *Cond = readScalarOperand();
       return BranchInst::Create(BBIfTrue, BBIfFalse, Cond, CurrentBB);
+    }
+    case Opcodes::INST_CONSTANT_INT: {
+      Type *Ty = ReadType(Func->getContext(), Stream);
+      uint64_t IntVal = Stream->readInt("constant_int");
+      return ConstantInt::get(Ty, IntVal);
     }
     default:
       report_fatal_error("Unrecognized instruction opcode");

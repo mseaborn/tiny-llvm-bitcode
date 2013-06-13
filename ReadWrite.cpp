@@ -859,25 +859,46 @@ void FunctionReader::read() {
 }
 
 
-void WriteSimpleElement(OutputStream *Stream, Constant *C) {
-  if (ArrayType *Ty = dyn_cast<ArrayType>(C->getType())) {
-    assert(Ty->getElementType()->isIntegerTy(8));
-    uint32_t Size = Ty->getNumElements();
-    // TODO: Write bulk data more efficiently than this.
-    if (isa<ConstantAggregateZero>(C)) {
-      for (unsigned I = 0; I < Size; ++I)
-        Stream->writeInt(0, "byte");
-    } else {
-      ConstantDataSequential *CD = cast<ConstantDataSequential>(C);
-      StringRef Data = CD->getRawDataValues();
-      for (unsigned I = 0; I < Size; ++I)
-        Stream->writeInt(Data.data()[I], "byte");
+class FlattenedConstant {
+  uint8_t *Buf;
+  uint32_t Offset;
+  uint32_t Size;
+
+  void writeSimpleElement(Constant *C) {
+    if (ArrayType *Ty = dyn_cast<ArrayType>(C->getType())) {
+      assert(Ty->getElementType()->isIntegerTy(8));
+      uint32_t Size = Ty->getNumElements();
+      if (isa<ConstantAggregateZero>(C)) {
+        // Nothing to do: Buf is already zero-initialized.
+      } else {
+        ConstantDataSequential *CD = cast<ConstantDataSequential>(C);
+        StringRef Data = CD->getRawDataValues();
+        memcpy(Buf + Offset, Data.data(), Size);
+      }
+      Offset += Size;
+      return;
     }
-    return;
+    errs() << "Value: " << *C << "\n";
+    report_fatal_error("Global initializer is not a SimpleElement");
   }
-  errs() << "Value: " << *C << "\n";
-  report_fatal_error("Global initializer is not a SimpleElement");
-}
+
+public:
+  FlattenedConstant(uint32_t Size, Constant *C): Offset(0), Size(Size) {
+    Buf = new uint8_t[Size];
+    memset(Buf, 0, Size);
+    writeSimpleElement(C);
+    assert(Offset == Size);
+  }
+  ~FlattenedConstant() {
+    delete[] Buf;
+  }
+
+  void write(OutputStream *Stream) {
+    // TODO: Write bulk data more efficiently than this.
+    for (unsigned I = 0; I < Size; ++I)
+      Stream->writeInt(Buf[I], "byte");
+  }
+};
 
 void WriteGlobal(OutputStream *Stream, GlobalVariable *GV) {
   // Use DataLayout as a convenience for getTypeAllocSize().
@@ -888,9 +909,12 @@ void WriteGlobal(OutputStream *Stream, GlobalVariable *GV) {
   assert(GV->hasInitializer());
   bool IsZero = GV->getInitializer()->isNullValue();
   Stream->writeInt(IsZero, "is_zero");
-  Stream->writeInt(DL.getTypeAllocSize(Ty), "global_size");
-  if (!IsZero)
-    WriteSimpleElement(Stream, GV->getInitializer());
+  uint32_t Size = DL.getTypeAllocSize(Ty);
+  Stream->writeInt(Size, "global_size");
+  if (!IsZero) {
+    FlattenedConstant Buffer(Size, GV->getInitializer());
+    Buffer.write(Stream);
+  }
 }
 
 Constant *ReadGlobalInitializer(InputStream *Stream, LLVMContext &Context) {

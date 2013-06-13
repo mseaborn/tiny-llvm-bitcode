@@ -76,6 +76,7 @@ namespace Opcodes {
 #include "Instructions.def"
 #undef HANDLE_BINARY_INST
     INST_CMP,
+    INST_CAST,
     // Pseudo-instructions.
     // FWD_REF(TYPE) creates a placeholder for a forward reference.
     INST_FWD_REF,
@@ -442,7 +443,6 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
     }
     case Instruction::IntToPtr:
     case Instruction::PtrToInt:
-    case Instruction::BitCast:
       // These casts are implicit.
       break;
     default:
@@ -458,6 +458,18 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
         Stream->writeInt(Op->getPredicate(), "predicate");
         writeOperand(Op->getOperand(0));
         writeOperand(Op->getOperand(1));
+        break;
+      }
+      if (isa<BitCastInst>(Inst) && Inst->getType()->isPointerTy()) {
+        // Bitcasts of pointers are implicit, but other bitcasts are not.
+        break;
+      }
+      if (CastInst *Op = dyn_cast<CastInst>(Inst)) {
+        Stream->writeInt(Opcodes::INST_CAST, "opcode");
+        // TODO: Ensure that these cast opcode values stay stable.
+        Stream->writeInt(Op->getOpcode(), "cast_opcode");
+        WriteType(Stream, Op->getType());
+        writeOperand(Op->getOperand(0));
         break;
       }
       errs() << "Instruction: " << *Inst << "\n";
@@ -701,6 +713,13 @@ Value *FunctionReader::readInstruction() {
       } else {
         report_fatal_error("Bad comparison predicate");
       }
+    }
+    case Opcodes::INST_CAST: {
+      Instruction::CastOps CastOpcode =
+          (Instruction::CastOps) Stream->readInt("cast_opcode");
+      Type *Ty = ReadType(Func->getContext(), Stream);
+      Value *Val = readScalarOperand();
+      return CastInst::Create(CastOpcode, Val, Ty, "", CurrentBB);
     }
     default:
       report_fatal_error("Unrecognized instruction opcode");

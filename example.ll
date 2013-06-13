@@ -154,6 +154,16 @@ define void @arith(i16 %x, i16 %y) {
   ret void
 }
 
+define void @casts(i32 %val) {
+  zext i32 %val to i64
+  sext i32 %val to i64
+  trunc i32 %val to i16
+  uitofp i32 %val to double
+  sitofp i32 %val to double
+  bitcast i32 %val to float
+  ret void
+}
+
 @var = internal global [123 x i8] zeroinitializer
 @const_var = internal constant [123 x i8] zeroinitializer
 

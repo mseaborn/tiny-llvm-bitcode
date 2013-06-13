@@ -7,7 +7,7 @@
 #include "llvm/Support/IRReader.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "ReadWrite.h"
+#include "Reader.h"
 
 using namespace llvm;
 

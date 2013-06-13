@@ -24,14 +24,15 @@ fi
 mkdir -p out
 
 cflags="$($llvm_config --cxxflags) -g -Wall"
-$ccache g++ $cflags -c ReadWrite.cpp -o out/ReadWrite.o
+$ccache g++ $cflags -c Writer.cpp -o out/Writer.o
+$ccache g++ $cflags -c Reader.cpp -o out/Reader.o
 $ccache g++ $cflags -c Freeze.cpp -o out/Freeze.o
 $ccache g++ $cflags -c Thaw.cpp -o out/Thaw.o
 
-$ccache g++ out/ReadWrite.o out/Freeze.o \
+$ccache g++ out/Writer.o out/Freeze.o \
     $($llvm_config --ldflags --libs) \
     -ldl -o out/Freeze
-$ccache g++ out/ReadWrite.o out/Thaw.o \
+$ccache g++ out/Reader.o out/Thaw.o \
     $($llvm_config --ldflags --libs) \
     -ldl -o out/Thaw
 

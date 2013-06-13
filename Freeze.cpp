@@ -6,7 +6,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Support/IRReader.h"
 
-#include "ReadWrite.h"
+#include "Writer.h"
 
 using namespace llvm;
 

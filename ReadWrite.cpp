@@ -435,6 +435,7 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       }
       if (CmpInst *Op = dyn_cast<CmpInst>(Inst)) {
         Stream->writeInt(Opcodes::INST_CMP, "opcode");
+        // TODO: Ensure that getPredicate() values stay stable.
         Stream->writeInt(Op->getPredicate(), "predicate");
         writeOperand(Op->getOperand(0));
         writeOperand(Op->getOperand(1));

@@ -67,6 +67,12 @@ namespace Opcodes {
     INST_CALL,
     INST_BR_UNCOND,
     INST_BR_COND,
+    // Pseudo-instructions.
+    // FWD_REF(TYPE) creates a placeholder for a forward reference.
+    INST_FWD_REF,
+    // FWD_DEF(N) replaces the Nth FWD_REF placeholder with the
+    // previous instruction.
+    INST_FWD_DEF,
   };
 };
 
@@ -192,11 +198,15 @@ Function *ReadFunctionDecl(InputStream *Stream, Module *M) {
 class FunctionWriter {
   OutputStream *Stream;
   Function *Func;
-  DenseMap<Value *, uint32_t> ValueMap;
   DenseMap<BasicBlock *, uint32_t> BasicBlockMap;
-  uint32_t CurrentValueID;
 
-  void computeValueIndexes();
+  uint32_t NextValueID;
+  DenseMap<Value *, uint32_t> ValueMap;
+  // Forward-referenced values that have not been defined yet.
+  uint32_t NextFwdRefID;
+  DenseMap<Value *, uint32_t> FwdRefs;
+
+  void allocateEarlyValueIDs();
   void writeOperand(Value *Val);
   void writeVarOperands(Instruction *Inst, uint32_t MinCount);
   void writeBasicBlockOperand(BasicBlock *BB);
@@ -209,7 +219,7 @@ public:
   void write();
 };
 
-static bool instructionHasValueId(Instruction *Inst) {
+static bool instructionHasValueId(Value *Inst) {
   // These instructions are implicit.
   if (isa<IntToPtrInst>(Inst) ||
       isa<PtrToIntInst>(Inst) ||
@@ -218,9 +228,10 @@ static bool instructionHasValueId(Instruction *Inst) {
   return !Inst->getType()->isVoidTy();
 }
 
-void FunctionWriter::computeValueIndexes() {
+void FunctionWriter::allocateEarlyValueIDs() {
   uint32_t NextBasicBlockID = 0;
-  uint32_t NextValueID = 0;
+  NextValueID = 0;
+  NextFwdRefID = 0;
 
   // Add globals to ValueMap.  TODO: For efficiency, do this once per
   // module rather than once per function.
@@ -228,42 +239,34 @@ void FunctionWriter::computeValueIndexes() {
   for (Module::iterator F = M->begin(), E = M->end(); F != E; ++F) {
     ValueMap[F] = NextValueID++;
   }
+  // Allocate value IDs for the function's arguments.
   for (Function::arg_iterator Arg = Func->arg_begin(), E = Func->arg_end();
        Arg != E; ++Arg) {
     ValueMap[Arg] = NextValueID++;
   }
-  // This is the ID at which instructions start.  Save this for later.
-  CurrentValueID = NextValueID;
-
+  // Allocate IDs for basic blocks.
   for (Function::iterator BB = Func->begin(), E = Func->end();
        BB != E; ++BB) {
     BasicBlockMap[BB] = NextBasicBlockID++;
-    for (BasicBlock::iterator Inst = BB->begin(), E = BB->end();
-         Inst != E; ++Inst) {
-      if (instructionHasValueId(Inst)) {
-        ValueMap[Inst] = NextValueID++;
-      }
-    }
   }
 }
 
-void FunctionWriter::writeOperand(Value *Val) {
+static Value *stripPtrCasts(Value *Val) {
   if (IntToPtrInst *Cast = dyn_cast<IntToPtrInst>(Val)) {
     Val = Cast->getOperand(0);
   } else if (PtrToIntInst *Cast = dyn_cast<PtrToIntInst>(Val)) {
     Val = Cast->getOperand(0);
   }
+  return Val;
+}
+
+void FunctionWriter::writeOperand(Value *Val) {
+  Val = stripPtrCasts(Val);
   if (ValueMap.count(Val) != 1) {
     errs() << "Value: " << *Val << "\n";
     report_fatal_error("Can't get value ID");
   }
-  uint32_t ID = ValueMap[Val];
-  Stream->writeInt(ID, "val");
-  if (ID >= CurrentValueID) {
-    // Forward reference:  write type as well.
-    Stream->writeMarker("fwd_ref");
-    WriteType(Stream, Val->getType());
-  }
+  Stream->writeInt(ValueMap[Val], "val");
 }
 
 void FunctionWriter::writeVarOperands(Instruction *Inst, uint32_t MinCount) {
@@ -280,6 +283,19 @@ void FunctionWriter::writeBasicBlockOperand(BasicBlock *BB) {
 }
 
 void FunctionWriter::writeInstruction(Instruction *Inst) {
+  // First, ensure the instruction's operands have been allocated value IDs.
+  for (unsigned I = 0, E = Inst->getNumOperands(); I < E; ++I) {
+    Value *Val = stripPtrCasts(Inst->getOperand(I));
+    if (!isa<BasicBlock>(Val) &&
+        !isa<Constant>(Val) &&
+        ValueMap.count(Val) != 1) {
+      Stream->writeInt(Opcodes::INST_FWD_REF, "opcode");
+      WriteType(Stream, Val->getType());
+      ValueMap[Val] = NextValueID++;
+      FwdRefs[Val] = NextFwdRefID++;
+    }
+  }
+
   switch (Inst->getOpcode()) {
     case Instruction::Ret: {
       ReturnInst *Ret = cast<ReturnInst>(Inst);
@@ -358,7 +374,7 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
 void FunctionWriter::write() {
   Stream->writeMarker("function_def_start");
   Stream->writeInt(Func->getBasicBlockList().size(), "basic_block_count");
-  computeValueIndexes();
+  allocateEarlyValueIDs();
 
   for (Function::iterator BB = Func->begin(), E = Func->end();
        BB != E; ++BB) {
@@ -366,10 +382,23 @@ void FunctionWriter::write() {
          Inst != E; ++Inst) {
       writeInstruction(Inst);
       if (instructionHasValueId(Inst)) {
-        assert(CurrentValueID == ValueMap[Inst]);
-        CurrentValueID++;
+        ValueMap[Inst] = NextValueID++;
+        // If this resolves a forward reference, declare that.
+        if (FwdRefs.count(Inst)) {
+          Stream->writeInt(Opcodes::INST_FWD_DEF, "opcode");
+          Stream->writeInt(FwdRefs[Inst], "fwd_ref_id");
+          FwdRefs.erase(Inst);
+        }
       }
     }
+  }
+  // Sanity check to ensure that every FWD_REF had a FWD_DEF.
+  if (FwdRefs.size() != 0) {
+    for (DenseMap<Value *, uint32_t>::iterator Iter = FwdRefs.begin(),
+           E = FwdRefs.end(); Iter != E; ++Iter) {
+      errs() << "Forward ref: " << *Iter->first << "\n";
+    }
+    report_fatal_error("Unresolved forward references when writing");
   }
 }
 
@@ -380,18 +409,20 @@ class FunctionReader {
   uint32_t BBCount;
   SmallVector<BasicBlock *, 10> BasicBlocks;
   SmallVector<Value *, 64> ValueList;
-  uint32_t CurrentValueID;
   BasicBlock *CurrentBB;
+
+  SmallVector<Value *, 16> FwdRefs;
+  uint32_t FwdRefsResolved;
 
   Value *readRawOperand();
   Value *readScalarOperand();
   Value *readPtrOperand(Type *Ty);
   BasicBlock *readBasicBlockOperand();
-  Instruction *readInstruction();
+  Value *readInstruction();
 
 public:
   FunctionReader(InputStream *Stream, Function *Func):
-      Stream(Stream), Func(Func) {
+      Stream(Stream), Func(Func), FwdRefsResolved(0) {
     IntPtrType = IntegerType::get(Func->getContext(), 32);
   }
 
@@ -400,24 +431,8 @@ public:
 
 Value *FunctionReader::readRawOperand() {
   uint32_t ID = Stream->readInt("val");
-  if (ID < CurrentValueID) {
-    Value *V = ValueList[ID];
-    assert(V);
-    return V;
-  }
-
-  if (ID >= ValueList.size())
-    ValueList.resize(ID + 1);
-
-  // Forward reference:  create new placeholder if necessary.
-  Stream->readMarker("fwd_ref");
-  Type *Ty = ReadType(Func->getContext(), Stream);
-  if (Value *V = ValueList[ID])
-    return V;
-  Value *Placeholder = new Argument(Ty);
-  assert(!ValueList[ID]);
-  ValueList[ID] = Placeholder;
-  return Placeholder;
+  assert(ID < ValueList.size());
+  return ValueList[ID];
 }
 
 Value *FunctionReader::readScalarOperand() {
@@ -440,9 +455,27 @@ BasicBlock *FunctionReader::readBasicBlockOperand() {
   return BasicBlocks[ID];
 }
 
-Instruction *FunctionReader::readInstruction() {
+Value *FunctionReader::readInstruction() {
   uint32_t Opcode = Stream->readInt("opcode");
   switch (Opcode) {
+    case Opcodes::INST_FWD_REF: {
+      Type *Ty = ReadType(Func->getContext(), Stream);
+      Value *Placeholder = new Argument(Ty);
+      FwdRefs.push_back(Placeholder);
+      return Placeholder;
+    }
+    case Opcodes::INST_FWD_DEF: {
+      assert(ValueList.size() > 0);
+      Value *NewVal = ValueList[ValueList.size() - 1];
+      uint32_t ID = Stream->readInt("fwd_ref_id");
+      Value *Placeholder = FwdRefs[ID];
+      assert(Placeholder);
+      Placeholder->replaceAllUsesWith(NewVal);
+      delete Placeholder;
+      FwdRefs[ID] = NULL;
+      ++FwdRefsResolved;
+      return NULL;
+    }
     case Opcodes::INST_RET_VALUE: {
       Value *RetVal = readScalarOperand();
       return ReturnInst::Create(Func->getContext(), RetVal, CurrentBB);
@@ -525,25 +558,23 @@ void FunctionReader::read() {
 
   unsigned CurrentBBIndex = 0;
   CurrentBB = BasicBlocks[0];
-  CurrentValueID = ValueList.size();
   for (;;) {
-    Instruction *NewInst = readInstruction();
-    if (isa<TerminatorInst>(NewInst)) {
+    Value *NewInst = readInstruction();
+    if (!NewInst) {
+      // Nothing to do.
+    } else if (isa<TerminatorInst>(NewInst)) {
       CurrentBBIndex++;
       if (CurrentBBIndex == BBCount)
         break;
       CurrentBB = BasicBlocks[CurrentBBIndex];
     } else if (instructionHasValueId(NewInst)) {
-      if (CurrentValueID >= ValueList.size())
-        ValueList.resize(CurrentValueID + 1);
-      if (Value *Placeholder = ValueList[CurrentValueID]) {
-        // Resolve placeholder value.
-        Placeholder->replaceAllUsesWith(NewInst);
-        delete Placeholder;
-      }
-      ValueList[CurrentValueID] = NewInst;
-      CurrentValueID++;
+      ValueList.push_back(NewInst);
     }
+  }
+  if (FwdRefsResolved != FwdRefs.size()) {
+    errs() << FwdRefsResolved << " forward references resolved, but "
+           << FwdRefs.size() << " requested\n";
+    report_fatal_error("Mismatch in forward references");
   }
 }
 

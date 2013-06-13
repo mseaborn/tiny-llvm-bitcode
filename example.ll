@@ -50,6 +50,20 @@ bb1:
   br label %bb2
 }
 
+define internal i16 @forward_ref2(i32 %ptr) {
+  br label %bb1
+bb2:
+  ; Test multiple references.
+  ret i16 %val2
+  ret i16 %val1
+bb1:
+  %ptr.p1 = inttoptr i32 %ptr to i16*
+  %val1 = load i16* %ptr.p1
+  %ptr.p2 = inttoptr i32 %ptr to i16*
+  %val2 = load i16* %ptr.p2
+  br label %bb2
+}
+
 define internal i32 @global_ref() {
   %ptr = ptrtoint i32 ()* @global_ref to i32
   ret i32 %ptr

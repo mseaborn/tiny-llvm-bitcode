@@ -219,3 +219,8 @@ define i32 @cast_of_var_addr() {
   %val1 = load i32* %bc
   ret i32 %val1
 }
+
+define i32 @load_without_cast() {
+  %val = load i32* @reloc_var
+  ret i32 %val
+}

@@ -623,10 +623,12 @@ Value *FunctionReader::readRawOperand() {
 // coerces Val to be a pointer-to-Ty.
 Value *FunctionReader::castOperand(Value *Val, Type *Ty) {
   if (Ty) {
+    Type *PtrTy = Ty->getPointerTo();
     if (Val->getType()->isPointerTy()) {
-      Val = new BitCastInst(Val, Ty->getPointerTo(), "", CurrentBB);
+      if (Val->getType() != PtrTy)
+        Val = new BitCastInst(Val, PtrTy, "", CurrentBB);
     } else {
-      Val = new IntToPtrInst(Val, Ty->getPointerTo(), "", CurrentBB);
+      Val = new IntToPtrInst(Val, PtrTy, "", CurrentBB);
     }
   } else {
     if (Val->getType()->isPointerTy())

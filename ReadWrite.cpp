@@ -338,6 +338,7 @@ class FunctionReader {
   Value *readScalarOperand();
   Value *readPtrOperand(Type *Ty);
   BasicBlock *readBasicBlockOperand();
+  Instruction *readInstruction();
 
 public:
   FunctionReader(InputStream *Stream, Function *Func):
@@ -390,6 +391,66 @@ BasicBlock *FunctionReader::readBasicBlockOperand() {
   return BasicBlocks[ID];
 }
 
+Instruction *FunctionReader::readInstruction() {
+  uint32_t Opcode = Stream->readInt("opcode");
+  switch (Opcode) {
+    case Opcodes::INST_RET_VALUE: {
+      Value *RetVal = readScalarOperand();
+      return ReturnInst::Create(Func->getContext(), RetVal, CurrentBB);
+    }
+    case Opcodes::INST_RET_VOID: {
+      return ReturnInst::Create(Func->getContext(), CurrentBB);
+    }
+    case Opcodes::INST_LOAD: {
+      Type *Ty = ReadType(Func->getContext(), Stream);
+      Value *Ptr = readPtrOperand(Ty);
+      return new LoadInst(Ptr, "", CurrentBB);
+    }
+    case Opcodes::INST_STORE: {
+      Value *Val = readScalarOperand();
+      Value *Ptr = readPtrOperand(Val->getType());
+      return new StoreInst(Val, Ptr, CurrentBB);
+    }
+    case Opcodes::INST_ALLOCA_FIXED:
+    case Opcodes::INST_ALLOCA_VARIABLE: {
+      uint32_t TypeSize = Stream->readInt("alloca_size");
+      Type *I8Ty = IntegerType::get(Func->getContext(), 8);
+      Type *Ty = ArrayType::get(I8Ty, TypeSize);
+      Value *ArraySize = NULL;
+      if (Opcode == Opcodes::INST_ALLOCA_VARIABLE)
+        ArraySize = readScalarOperand();
+      return new AllocaInst(Ty, ArraySize, "", CurrentBB);
+    }
+    case Opcodes::INST_CALL: {
+      Type *ReturnType = ReadType(Func->getContext(), Stream);
+      uint32_t OpCount = Stream->readInt("operand_count");
+      SmallVector<Value *, 10> Args;
+      SmallVector<Type *, 10> ArgTypes;
+      for (unsigned I = 0; I < OpCount; ++I) {
+        Value *Arg = readScalarOperand();
+        Args.push_back(Arg);
+        ArgTypes.push_back(Arg->getType());
+      }
+      Type *FuncTy = FunctionType::get(ReturnType, ArgTypes, false);
+      // The callee is the last operand.
+      Value *Callee = readPtrOperand(FuncTy);
+      return CallInst::Create(Callee, Args, "", CurrentBB);
+    }
+    case Opcodes::INST_BR_UNCOND: {
+      BasicBlock *BB = readBasicBlockOperand();
+      return BranchInst::Create(BB, CurrentBB);
+    }
+    case Opcodes::INST_BR_COND: {
+      BasicBlock *BBIfTrue = readBasicBlockOperand();
+      BasicBlock *BBIfFalse = readBasicBlockOperand();
+      Value *Cond = readScalarOperand();
+      return BranchInst::Create(BBIfTrue, BBIfFalse, Cond, CurrentBB);
+    }
+    default:
+      report_fatal_error("Unrecognized instruction opcode");
+  }
+}
+
 void FunctionReader::read() {
   Stream->readMarker("function_def_start");
   BBCount = Stream->readInt("basic_block_count");
@@ -414,73 +475,7 @@ void FunctionReader::read() {
   CurrentBB = BasicBlocks[0];
   CurrentValueID = ValueList.size();
   for (;;) {
-    uint32_t Opcode = Stream->readInt("opcode");
-    Instruction *NewInst = NULL;
-    switch (Opcode) {
-      case Opcodes::INST_RET_VALUE: {
-        Value *RetVal = readScalarOperand();
-        NewInst = ReturnInst::Create(Func->getContext(), RetVal, CurrentBB);
-        break;
-      }
-      case Opcodes::INST_RET_VOID: {
-        NewInst = ReturnInst::Create(Func->getContext(), CurrentBB);
-        break;
-      }
-      case Opcodes::INST_LOAD: {
-        Type *Ty = ReadType(Func->getContext(), Stream);
-        Value *Ptr = readPtrOperand(Ty);
-        NewInst = new LoadInst(Ptr, "", CurrentBB);
-        break;
-      }
-      case Opcodes::INST_STORE: {
-        Value *Val = readScalarOperand();
-        Value *Ptr = readPtrOperand(Val->getType());
-        NewInst = new StoreInst(Val, Ptr, CurrentBB);
-        break;
-      }
-      case Opcodes::INST_ALLOCA_FIXED:
-      case Opcodes::INST_ALLOCA_VARIABLE: {
-        uint32_t TypeSize = Stream->readInt("alloca_size");
-        Type *I8Ty = IntegerType::get(Func->getContext(), 8);
-        Type *Ty = ArrayType::get(I8Ty, TypeSize);
-        Value *ArraySize = NULL;
-        if (Opcode == Opcodes::INST_ALLOCA_VARIABLE)
-          ArraySize = readScalarOperand();
-        NewInst = new AllocaInst(Ty, ArraySize, "", CurrentBB);
-        break;
-      }
-      case Opcodes::INST_CALL: {
-        Type *ReturnType = ReadType(Func->getContext(), Stream);
-        uint32_t OpCount = Stream->readInt("operand_count");
-        SmallVector<Value *, 10> Args;
-        SmallVector<Type *, 10> ArgTypes;
-        for (unsigned I = 0; I < OpCount; ++I) {
-          Value *Arg = readScalarOperand();
-          Args.push_back(Arg);
-          ArgTypes.push_back(Arg->getType());
-        }
-        Type *FuncTy = FunctionType::get(ReturnType, ArgTypes, false);
-        // The callee is the last operand.
-        Value *Callee = readPtrOperand(FuncTy);
-        NewInst = CallInst::Create(Callee, Args, "", CurrentBB);
-        break;
-      }
-      case Opcodes::INST_BR_UNCOND: {
-        BasicBlock *BB = readBasicBlockOperand();
-        NewInst = BranchInst::Create(BB, CurrentBB);
-        break;
-      }
-      case Opcodes::INST_BR_COND: {
-        BasicBlock *BBIfTrue = readBasicBlockOperand();
-        BasicBlock *BBIfFalse = readBasicBlockOperand();
-        Value *Cond = readScalarOperand();
-        NewInst = BranchInst::Create(BBIfTrue, BBIfFalse, Cond, CurrentBB);
-        break;
-      }
-      default:
-        report_fatal_error("Unrecognized instruction opcode");
-    }
-
+    Instruction *NewInst = readInstruction();
     if (isa<TerminatorInst>(NewInst)) {
       CurrentBBIndex++;
       if (CurrentBBIndex == BBCount)

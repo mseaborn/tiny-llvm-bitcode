@@ -180,6 +180,8 @@ define void @arith(i16 %x, i16 %y) {
   mul i16 %x, %y
   udiv i16 %x, %y
   sdiv i16 %x, %y
+  urem i16 %x, %y
+  srem i16 %x, %y
   shl i16 %x, %y
   lshr i16 %x, %y
   ashr i16 %x, %y

@@ -58,11 +58,15 @@ void WriteType(OutputStream *Stream, Type *Ty) {
   Stream->writeInt(TypeVal, "type");
 }
 
+void WriteBytes(OutputStream *Stream, const uint8_t *Data, uint32_t Size) {
+  // TODO: Write bulk data more efficiently than this.
+  for (unsigned I = 0; I < Size; ++I)
+    Stream->writeInt(Data[I], "byte");
+}
+
 void WriteString(OutputStream *Stream, const std::string &String) {
   Stream->writeInt(String.size(), "string_length");
-  for (unsigned I = 0, E = String.size(); I < E; ++I) {
-    Stream->writeInt(String[I], "char");
-  }
+  WriteBytes(Stream, (uint8_t *) String.data(), String.size());
   Stream->writeMarker(("string=" + String).c_str());
 }
 
@@ -180,13 +184,29 @@ void FunctionWriter::materializeOperand(Value *Val) {
   Val = stripPtrCasts(Val);
   if (isa<BasicBlock>(Val) || ValueMap.hasIDForValue(Val))
     return;
-  // GlobalValues should already be in ValueMap.
-  assert(!isa<GlobalValue>(Val));
-  if (ConstantInt *C = dyn_cast<ConstantInt>(Val)) {
-    Stream->writeInt(Opcodes::INST_CONSTANT_INT, "opcode");
-    // TODO: Could we omit the type here to save space?
-    WriteType(Stream, C->getType());
-    Stream->writeInt(C->getZExtValue(), "constant_int");
+  if (isa<Constant>(Val)) {
+    // GlobalValues should already be in ValueMap.
+    assert(!isa<GlobalValue>(Val));
+    if (ConstantInt *C = dyn_cast<ConstantInt>(Val)) {
+      Stream->writeInt(Opcodes::INST_CONSTANT_INT, "opcode");
+      // TODO: Could we omit the type here to save space?
+      WriteType(Stream, C->getType());
+      Stream->writeInt(C->getZExtValue(), "constant_int");
+    } else if (ConstantFP *CF = dyn_cast<ConstantFP>(Val)) {
+      if (CF->getType()->isFloatTy()) {
+        Stream->writeInt(Opcodes::INST_CONSTANT_FLOAT, "opcode");
+      } else if (CF->getType()->isDoubleTy()) {
+        Stream->writeInt(Opcodes::INST_CONSTANT_DOUBLE, "opcode");
+      } else {
+        report_fatal_error("Unrecognized ConstantFP type");
+      }
+      APInt Data = CF->getValueAPF().bitcastToAPInt();
+      assert(Data.getBitWidth() % 8 == 0);
+      WriteBytes(Stream, (uint8_t *) Data.getRawData(), Data.getBitWidth() / 8);
+    } else {
+      errs() << "Value: " << *Val << "\n";
+      report_fatal_error("Unhandled constant");
+    }
     ValueMap.addIDForValue(Val);
     return;
   }
@@ -514,9 +534,7 @@ public:
   }
 
   void write(OutputStream *Stream, ValueWriterMap *ValueMap) {
-    // TODO: Write bulk data more efficiently than this.
-    for (unsigned I = 0; I < Size; ++I)
-      Stream->writeInt(Buf[I], "byte");
+    WriteBytes(Stream, Buf, Size);
     // Write relocations.
     Stream->writeInt(Relocs.size(), "reloc_count");
     uint32_t PrevPos = 0;

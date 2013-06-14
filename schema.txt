@@ -33,7 +33,7 @@ Global_var_def:
   // The variable's contents are defined by an array of bytes and
   // array of relocations:
   if !is_zero:
-    repeat: global_size * char
+    repeat: global_size * byte
     reloc_count
     repeat: reloc_count * Reloc
 
@@ -57,7 +57,7 @@ Function_decl:
 
 String:
   string_length
-  repeat: string_length * char
+  repeat: string_length * byte
 
 Function_def:
   basic_block_count
@@ -99,6 +99,8 @@ Operation:
     // previous instruction.
     INST_FWD_DEF -> fwd_ref_id
     INST_CONSTANT_INT -> type constant_int
+    INST_CONSTANT_FLOAT -> repeat: 4 * byte
+    INST_CONSTANT_DOUBLE -> repeat: 8 * byte
 
 Phi_entry:
   basic_block_id

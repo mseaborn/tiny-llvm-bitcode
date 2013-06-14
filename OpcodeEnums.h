@@ -42,6 +42,8 @@ namespace Opcodes {
     // previous instruction.
     INST_FWD_DEF,
     INST_CONSTANT_INT,
+    INST_CONSTANT_FLOAT,
+    INST_CONSTANT_DOUBLE,
   };
 };
 

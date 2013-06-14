@@ -49,12 +49,17 @@ Type *ReadType(LLVMContext &Context, InputStream *Stream) {
   }
 }
 
+void ReadBytes(InputStream *Stream, uint8_t *Buf, uint32_t Size) {
+  for (unsigned I = 0; I < Size; ++I)
+    Buf[I] = Stream->readInt("byte");
+}
+
 std::string ReadString(InputStream *Stream) {
-  std::string Str;
   unsigned Size = Stream->readInt("string_length");
+  std::string Str;
+  Str.reserve(Size);
   for (unsigned I = 0; I < Size; ++I) {
-    char C = Stream->readInt("char");
-    // TODO: Avoid taking O(n^2) time.
+    char C = Stream->readInt("byte");
     Str += C;
   }
   Stream->readMarker(("string=" + Str).c_str());
@@ -306,6 +311,22 @@ Value *FunctionReader::readInstruction() {
       Type *Ty = ReadType(Func->getContext(), Stream);
       uint64_t IntVal = Stream->readInt("constant_int");
       return ConstantInt::get(Ty, IntVal);
+    }
+    case Opcodes::INST_CONSTANT_FLOAT: {
+      union {
+        uint8_t Bytes[4];
+        float Val;
+      } U;
+      ReadBytes(Stream, U.Bytes, sizeof(U.Bytes));
+      return ConstantFP::get(Func->getContext(), APFloat(U.Val));
+    }
+    case Opcodes::INST_CONSTANT_DOUBLE: {
+      union {
+        uint8_t Bytes[8];
+        double Val;
+      } U;
+      ReadBytes(Stream, U.Bytes, sizeof(U.Bytes));
+      return ConstantFP::get(Func->getContext(), APFloat(U.Val));
     }
 
 #define HANDLE_BINARY_INST(LLVM_OP, WIRE_OP) \

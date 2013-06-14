@@ -203,6 +203,9 @@ void FunctionWriter::materializeOperand(Value *Val) {
       APInt Data = CF->getValueAPF().bitcastToAPInt();
       assert(Data.getBitWidth() % 8 == 0);
       WriteBytes(Stream, (uint8_t *) Data.getRawData(), Data.getBitWidth() / 8);
+    } else if (isa<UndefValue>(Val)) {
+      Stream->writeInt(Opcodes::INST_CONSTANT_UNDEFVALUE, "opcode");
+      WriteType(Stream, Val->getType());
     } else {
       errs() << "Value: " << *Val << "\n";
       report_fatal_error("Unhandled constant");

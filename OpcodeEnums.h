@@ -44,6 +44,7 @@ namespace Opcodes {
     INST_CONSTANT_INT,
     INST_CONSTANT_FLOAT,
     INST_CONSTANT_DOUBLE,
+    INST_CONSTANT_UNDEFVALUE,
   };
 };
 

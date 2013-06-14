@@ -328,6 +328,9 @@ Value *FunctionReader::readInstruction() {
       ReadBytes(Stream, U.Bytes, sizeof(U.Bytes));
       return ConstantFP::get(Func->getContext(), APFloat(U.Val));
     }
+    case Opcodes::INST_CONSTANT_UNDEFVALUE: {
+      return UndefValue::get(ReadType(Func->getContext(), Stream));
+    }
 
 #define HANDLE_BINARY_INST(LLVM_OP, WIRE_OP) \
     case Opcodes::WIRE_OP: return readBinOp(Instruction::LLVM_OP);

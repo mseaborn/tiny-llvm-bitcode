@@ -101,6 +101,7 @@ Operation:
     INST_CONSTANT_INT -> type constant_int
     INST_CONSTANT_FLOAT -> repeat: 4 * byte
     INST_CONSTANT_DOUBLE -> repeat: 8 * byte
+    INST_CONSTANT_UNDEFVALUE -> type
 
 Phi_entry:
   basic_block_id
@@ -159,6 +160,9 @@ opcode: enum of:
     // previous instruction.
     INST_FWD_DEF
     INST_CONSTANT_INT
+    INST_CONSTANT_FLOAT
+    INST_CONSTANT_DOUBLE
+    INST_CONSTANT_UNDEFVALUE
 
 terminator_opcode: enum of:
     INST_RET_VOID

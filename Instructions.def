@@ -1,7 +1,7 @@
 
 // No #include guard: This is intended to be #included multiple times.
 
-// Arithmetic.
+// Integer arithmetic.
 HANDLE_BINARY_INST(Add, INST_ADD)
 HANDLE_BINARY_INST(Sub, INST_SUB)
 HANDLE_BINARY_INST(Mul, INST_MUL)
@@ -10,12 +10,19 @@ HANDLE_BINARY_INST(SDiv, INST_SDIV)
 HANDLE_BINARY_INST(URem, INST_UREM)
 HANDLE_BINARY_INST(SRem, INST_SREM)
 
-// Bitwise operations.
+// Floating point arithmetic.
+HANDLE_BINARY_INST(FAdd, INST_FADD)
+HANDLE_BINARY_INST(FSub, INST_FSUB)
+HANDLE_BINARY_INST(FMul, INST_FMUL)
+HANDLE_BINARY_INST(FDiv, INST_FDIV)
+HANDLE_BINARY_INST(FRem, INST_FREM)
+
+// Integer bitwise operations.
 HANDLE_BINARY_INST(And, INST_AND)
 HANDLE_BINARY_INST(Or, INST_OR)
 HANDLE_BINARY_INST(Xor, INST_XOR)
 
-// Shift operations.
+// Integer shift operations.
 HANDLE_BINARY_INST(Shl, INST_SHL)
 HANDLE_BINARY_INST(LShr, INST_LSHR)
 HANDLE_BINARY_INST(AShr, INST_ASHR)

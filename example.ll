@@ -196,6 +196,15 @@ define void @arith(i16 %x, i16 %y) {
   ret void
 }
 
+define void @fp_arith(double %x, double %y) {
+  fadd double %x, %y
+  fsub double %x, %y
+  fmul double %x, %y
+  fdiv double %x, %y
+  frem double %x, %y
+  ret void
+}
+
 define void @casts(i32 %val) {
   zext i32 %val to i64
   sext i32 %val to i64

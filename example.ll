@@ -30,6 +30,12 @@ define internal i32 @atomicrmw(i32 %ptr, i32 %val) {
   ret i32 %result
 }
 
+define internal i32 @cmpxchg(i32 %ptr, i32 %old, i32 %new) {
+  %ptr.p = inttoptr i32 %ptr to i32*
+  %result = cmpxchg i32* %ptr.p, i32 %old, i32 %new seq_cst
+  ret i32 %result
+}
+
 define internal void @unconditional_branch() {
   br label %bb
 bb:

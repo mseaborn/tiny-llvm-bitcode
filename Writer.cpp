@@ -290,6 +290,17 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       writeOperand(Op->getOperand(0));
       break;
     }
+    case Instruction::AtomicCmpXchg: {
+      AtomicCmpXchgInst *Op = cast<AtomicCmpXchgInst>(Inst);
+      // TODO: Check the Ordering and SynchScope fields.
+      // TODO: Handle "volatile" attribute.
+      Stream->writeInt(Opcodes::INST_ATOMICCMPXCHG, "opcode");
+      writeOperand(Op->getOperand(1));
+      writeOperand(Op->getOperand(2));
+      // Put pointer last to simplify type handling in the reader.
+      writeOperand(Op->getOperand(0));
+      break;
+    }
     case Instruction::Alloca: {
       // TODO: Handle "align".
       AllocaInst *Alloca = cast<AllocaInst>(Inst);

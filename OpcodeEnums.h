@@ -20,6 +20,7 @@ namespace Opcodes {
     INST_LOAD,
     INST_STORE,
     INST_ATOMICRMW, // TODO: Use a higher opcode, since this is rare
+    INST_ATOMICCMPXCHG,
     INST_ALLOCA_FIXED,
     INST_ALLOCA_VARIABLE,
     INST_CALL,

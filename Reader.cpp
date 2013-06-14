@@ -218,6 +218,13 @@ Value *FunctionReader::readInstruction() {
       return new AtomicRMWInst(Op, Ptr, Val, SequentiallyConsistent,
                                CrossThread, CurrentBB);
     }
+    case Opcodes::INST_ATOMICCMPXCHG: {
+      Value *OldVal = readScalarOperand();
+      Value *NewVal = readScalarOperand();
+      Value *Ptr = readPtrOperand(OldVal->getType());
+      return new AtomicCmpXchgInst(Ptr, OldVal, NewVal, SequentiallyConsistent,
+                                   CrossThread, CurrentBB);
+    }
     case Opcodes::INST_ALLOCA_FIXED:
     case Opcodes::INST_ALLOCA_VARIABLE: {
       uint32_t TypeSize = Stream->readInt("alloca_size");

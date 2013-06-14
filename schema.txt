@@ -77,7 +77,8 @@ Operation:
   tagged_variant(opcode):
     INST_LOAD -> type val
     INST_STORE -> val val  // Type is implied by value's type
-    INST_ATOMICRMW -> val val val
+    INST_ATOMICRMW -> val val
+    INST_ATOMICCMPXCHG -> val val val
     INST_ALLOCA_FIXED -> alloca_size
     INST_ALLOCA_VARIABLE -> alloca_size val
     INST_CALL ->
@@ -145,6 +146,7 @@ opcode: enum of:
     INST_LOAD
     INST_STORE
     INST_ATOMICRMW
+    INST_ATOMICCMPXCHG
     INST_ALLOCA_FIXED
     INST_ALLOCA_VARIABLE
     INST_CALL

@@ -213,11 +213,17 @@ define void @arith(i16 %x, i16 %y) {
 }
 
 define void @fp_arith(double %x, double %y) {
+  ; BinaryOperators
   fadd double %x, %y
   fsub double %x, %y
   fmul double %x, %y
   fdiv double %x, %y
   frem double %x, %y
+
+  ; Comparisons
+  fcmp oeq double %x, %y
+  fcmp one double %x, %y
+
   ret void
 }
 

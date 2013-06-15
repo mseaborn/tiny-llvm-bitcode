@@ -358,6 +358,9 @@ Value *FunctionReader::readInstruction() {
       if (Predicate >= CmpInst::FIRST_ICMP_PREDICATE &&
           Predicate <= CmpInst::LAST_ICMP_PREDICATE) {
         return new ICmpInst(*CurrentBB, Predicate, Op1, Op2);
+      } else if (Predicate >= CmpInst::FIRST_FCMP_PREDICATE &&
+                 Predicate <= CmpInst::LAST_FCMP_PREDICATE) {
+        return new FCmpInst(*CurrentBB, Predicate, Op1, Op2);
       } else {
         report_fatal_error("Bad comparison predicate");
       }

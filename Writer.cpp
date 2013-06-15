@@ -316,6 +316,7 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       Stream->writeInt((Alloca->isArrayAllocation() ?
                         Opcodes::INST_ALLOCA_VARIABLE :
                         Opcodes::INST_ALLOCA_FIXED), "opcode");
+      WriteAlignmentVal(Stream, Alloca->getAlignment());
       Stream->writeInt(Ty->getNumElements(), "alloca_size");
       if (Alloca->isArrayAllocation())
         writeOperand(Alloca->getArraySize());

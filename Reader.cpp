@@ -243,13 +243,14 @@ Value *FunctionReader::readInstruction() {
     }
     case Opcodes::INST_ALLOCA_FIXED:
     case Opcodes::INST_ALLOCA_VARIABLE: {
+      uint32_t Align = ReadAlignmentVal(Stream);
       uint32_t TypeSize = Stream->readInt("alloca_size");
       Type *I8Ty = IntegerType::get(Func->getContext(), 8);
       Type *Ty = ArrayType::get(I8Ty, TypeSize);
       Value *ArraySize = NULL;
       if (Opcode == Opcodes::INST_ALLOCA_VARIABLE)
         ArraySize = readScalarOperand();
-      Value *Ptr = new AllocaInst(Ty, ArraySize, "", CurrentBB);
+      Value *Ptr = new AllocaInst(Ty, ArraySize, Align, "", CurrentBB);
       return new PtrToIntInst(Ptr, IntPtrType, "", CurrentBB);
     }
     case Opcodes::INST_CALL: {

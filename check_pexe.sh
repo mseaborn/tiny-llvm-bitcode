@@ -14,7 +14,12 @@ pexe="$1"
 $llvm_bin/opt "$pexe" -strip -S | grep -v '; ModuleID =' > out/pexe.orig.ll
 
 ./out/Freeze "$pexe" > out/pexe.new_bc
-./out/Thaw out/pexe.new_bc > out/pexe.new_bc.ll
+./out/Thaw out/pexe.new_bc > out/pexe.new_bc.ll1
+
+# The reader introduces ConstantExprs when handling phis of globals,
+# so expand these out for the comparison.
+$llvm_bin/opt -expand-constant-expr -strip \
+    out/pexe.new_bc.ll1 -S -o - | grep -v '; ModuleID =' > out/pexe.new_bc.ll
 
 $llvm_bin/opt out/pexe.new_bc.ll -o out/pexe.new.pexe
 

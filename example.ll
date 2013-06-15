@@ -100,6 +100,15 @@ bb:
   ret i32 %phi
 }
 
+define internal i32 @phi_of_global() {
+entry:
+  %ptr = ptrtoint i32 ()* @phi_of_global to i32
+  br label %bb
+bb:
+  %phi = phi i32 [ %ptr, %entry ]
+  ret i32 %phi
+}
+
 define internal i16 @forward_ref(i32 %ptr) {
   br label %bb1
 bb2:

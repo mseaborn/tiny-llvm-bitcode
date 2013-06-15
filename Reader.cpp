@@ -149,8 +149,15 @@ Value *FunctionReader::castOperand(Value *Val, Type *Ty) {
       Val = new IntToPtrInst(Val, PtrTy, "", CurrentBB);
     }
   } else {
-    if (Val->getType()->isPointerTy())
-      Val = new PtrToIntInst(Val, IntPtrType, "", CurrentBB);
+    if (Val->getType()->isPointerTy()) {
+      // We preserve the Constant-ness of Val in order to handle phi
+      // nodes with globals as operands.
+      if (Constant *C = dyn_cast<Constant>(Val)) {
+        Val = ConstantExpr::getPtrToInt(C, IntPtrType);
+      } else {
+        Val = new PtrToIntInst(Val, IntPtrType, "", CurrentBB);
+      }
+    }
   }
   return Val;
 }

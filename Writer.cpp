@@ -572,6 +572,7 @@ void WriteGlobal(OutputStream *Stream, GlobalVariable *GV) {
   // TODO: Handle "align" attribute.
   DataLayout DL("");
   Type *Ty = GV->getType()->getPointerElementType();
+  WriteAlignmentVal(Stream, GV->getAlignment());
   Stream->writeInt(GV->isConstant(), "is_constant");
   assert(GV->hasInitializer());
   bool IsZero = GV->getInitializer()->isNullValue();

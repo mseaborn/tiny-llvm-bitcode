@@ -237,6 +237,8 @@ define void @casts(i32 %val) {
        i32 ptrtoint (void ()* @unconditional_branch to i32),
        [5 x i8] c"data2" }>
 
+@aligned_var = internal global [1 x i8] c"x", align 4
+
 define i32 @get_var_addr() {
   %ptr = ptrtoint [123 x i8]* @var to i32
   ret i32 %ptr

@@ -480,11 +480,13 @@ Constant *ReadGlobalInitializer(InputStream *Stream, LLVMContext &Context,
 
 GlobalVariable *ReadGlobal(InputStream *Stream, Module *M,
                            ReaderValueList *ValueList) {
+  uint32_t Align = ReadAlignmentVal(Stream);
   bool IsConstant = Stream->readInt("is_constant");
   Constant *Init = ReadGlobalInitializer(Stream, M->getContext(), ValueList);
-  return new GlobalVariable(*M, Init->getType(), IsConstant,
-                            GlobalValue::InternalLinkage,
-                            Init, "");
+  GlobalVariable *GV = new GlobalVariable(
+      *M, Init->getType(), IsConstant, GlobalValue::InternalLinkage, Init, "");
+  GV->setAlignment(Align);
+  return GV;
 }
 
 void ReadModule(InputStream *Stream, Module *M) {

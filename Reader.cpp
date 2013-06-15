@@ -95,6 +95,9 @@ Function *ReadFunctionDecl(InputStream *Stream, Module *M) {
     ArgTypes[0] = PtrTy;
   } else if (FuncName == "llvm.nacl.read.tp") {
     ReturnType = PtrTy;
+  } else if (FuncName == "llvm.nacl.setjmp" ||
+             FuncName == "llvm.nacl.longjmp") {
+    ArgTypes[0] = PtrTy;
   }
   FunctionType *FTy = FunctionType::get(ReturnType, ArgTypes, false);
   return Function::Create(FTy, Linkage, FuncName, M);

@@ -115,6 +115,16 @@ bb1:
   br label %bb2
 }
 
+define internal i32 @forward_ref_of_pointer() {
+  br label %bb1
+bb2:
+  ret i32 %ptr
+bb1:
+  %ptr.p = alloca [4 x i8]
+  %ptr = ptrtoint [4 x i8]* %ptr.p to i32
+  br label %bb2
+}
+
 define internal i32 @global_ref() {
   %ptr = ptrtoint i32 ()* @global_ref to i32
   ret i32 %ptr

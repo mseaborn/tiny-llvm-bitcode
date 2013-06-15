@@ -191,7 +191,7 @@ Value *FunctionReader::readInstruction() {
       uint32_t ID = Stream->readInt("fwd_ref_id");
       Value *Placeholder = FwdRefs[ID];
       assert(Placeholder);
-      Placeholder->replaceAllUsesWith(NewVal);
+      Placeholder->replaceAllUsesWith(castOperand(NewVal, NULL));
       delete Placeholder;
       FwdRefs[ID] = NULL;
       ++FwdRefsResolved;

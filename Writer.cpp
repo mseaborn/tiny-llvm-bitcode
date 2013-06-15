@@ -218,7 +218,7 @@ void FunctionWriter::materializeOperand(Value *Val) {
     return;
   }
   Stream->writeInt(Opcodes::INST_FWD_REF, "opcode");
-  WriteType(Stream, Val->getType());
+  WriteType(Stream, StripPtrType(Val->getType()));
   ValueMap.addIDForValue(Val);
   FwdRefs[Val] = NextFwdRefID++;
 }

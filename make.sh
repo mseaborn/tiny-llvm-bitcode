@@ -36,21 +36,8 @@ $ccache g++ out/Reader.o out/Thaw.o \
     $($llvm_config --ldflags --libs) \
     -ldl -o out/Thaw
 
-$llvm_bin/opt example.ll -o out/example.o
-$llvm_bin/opt example.ll -strip -S \
-    | grep -v '; ModuleID =' > out/example.ll.orig
-
-./out/Freeze example.ll > out/example.bc
-wc -c out/example.o
-wc -l out/example.bc
-./out/Thaw < out/example.bc > out/example.bc.ll
-
-diff -u out/example.ll.orig out/example.bc.ll
-echo PASS: .ll files are the same
-
-# Sanity check: re-check syntax and run verifier pass.
-# This is redundant after the diff test.
-$llvm_bin/opt out/example.bc.ll -S > /dev/null
+./check_pexe.sh example.ll
+echo PASS: example.ll reads back the same
 
 # Could do the following command here, but bash doesn't make failures
 # in Freeze fatal:

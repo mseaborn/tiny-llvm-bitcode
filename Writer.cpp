@@ -455,6 +455,15 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
   }
 }
 
+static bool instructionHasValueId(Value *Inst) {
+  // These instructions are implicit.
+  if (isa<IntToPtrInst>(Inst) ||
+      isa<PtrToIntInst>(Inst) ||
+      (isa<BitCastInst>(Inst) && Inst->getType()->isPointerTy()))
+    return false;
+  return !Inst->getType()->isVoidTy();
+}
+
 void FunctionWriter::write() {
   Stream->writeMarker("function_def_start");
   Stream->writeInt(Func->getBasicBlockList().size(), "basic_block_count");

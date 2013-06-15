@@ -89,6 +89,17 @@ exit:
   ret i32 %phi
 }
 
+; alloca is a corner case because it's of pointer type.
+define internal i32 @phi_of_alloca() {
+entry:
+  %ptr.p = alloca [4 x i8]
+  %ptr = ptrtoint [4 x i8]* %ptr.p to i32
+  br label %bb
+bb:
+  %phi = phi i32 [ %ptr, %entry ]
+  ret i32 %phi
+}
+
 define internal i16 @forward_ref(i32 %ptr) {
   br label %bb1
 bb2:
@@ -115,7 +126,8 @@ bb1:
   br label %bb2
 }
 
-define internal i32 @forward_ref_of_pointer() {
+; alloca is a corner case because it's of pointer type.
+define internal i32 @forward_ref_of_alloca() {
   br label %bb1
 bb2:
   ret i32 %ptr

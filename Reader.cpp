@@ -239,7 +239,8 @@ Value *FunctionReader::readInstruction() {
       Value *ArraySize = NULL;
       if (Opcode == Opcodes::INST_ALLOCA_VARIABLE)
         ArraySize = readScalarOperand();
-      return new AllocaInst(Ty, ArraySize, "", CurrentBB);
+      Value *Ptr = new AllocaInst(Ty, ArraySize, "", CurrentBB);
+      return new PtrToIntInst(Ptr, IntPtrType, "", CurrentBB);
     }
     case Opcodes::INST_CALL: {
       Value *Callee = readRawOperand();
@@ -418,7 +419,7 @@ void FunctionReader::read() {
       if (CurrentBBIndex == BBCount)
         break;
       CurrentBB = BasicBlocks[CurrentBBIndex];
-    } else if (instructionHasValueId(NewInst)) {
+    } else if (!NewInst->getType()->isVoidTy()) {
       ValueList.push_back(NewInst);
     }
   }

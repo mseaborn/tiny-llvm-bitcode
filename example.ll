@@ -146,6 +146,14 @@ bb1:
   br label %bb2
 }
 
+; Another example of a forward reference.
+define void @self_reference_phi() {
+  ret void
+loop:
+  %p = phi i32 [ %p, %loop ]
+  br label %loop
+}
+
 define internal i32 @global_ref() {
   %ptr = ptrtoint i32 ()* @global_ref to i32
   ret i32 %ptr

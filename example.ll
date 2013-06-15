@@ -253,3 +253,11 @@ define i32 @load_without_cast() {
   %val = load i32* @reloc_var
   ret i32 %val
 }
+
+define void @align_load_store(i32 %ptr) {
+  %ptr.p1 = inttoptr i32 %ptr to i8*
+  %val = load i8* %ptr.p1, align 8
+  %ptr.p2 = inttoptr i32 %ptr to i8*
+  store i8 %val, i8* %ptr.p2, align 16
+  ret void
+}

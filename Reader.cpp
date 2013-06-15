@@ -49,6 +49,10 @@ Type *ReadType(LLVMContext &Context, InputStream *Stream) {
   }
 }
 
+uint32_t ReadAlignmentVal(InputStream *Stream) {
+  return (1 << Stream->readInt("align")) >> 1;
+}
+
 void ReadBytes(InputStream *Stream, uint8_t *Buf, uint32_t Size) {
   for (unsigned I = 0; I < Size; ++I)
     Buf[I] = Stream->readInt("byte");
@@ -202,13 +206,15 @@ Value *FunctionReader::readInstruction() {
     }
     case Opcodes::INST_LOAD: {
       Type *Ty = ReadType(Func->getContext(), Stream);
+      uint32_t Align = ReadAlignmentVal(Stream);
       Value *Ptr = readPtrOperand(Ty);
-      return new LoadInst(Ptr, "", CurrentBB);
+      return new LoadInst(Ptr, "", false, Align, CurrentBB);
     }
     case Opcodes::INST_STORE: {
+      uint32_t Align = ReadAlignmentVal(Stream);
       Value *Val = readScalarOperand();
       Value *Ptr = readPtrOperand(Val->getType());
-      return new StoreInst(Val, Ptr, CurrentBB);
+      return new StoreInst(Val, Ptr, false, Align, CurrentBB);
     }
     case Opcodes::INST_ATOMICRMW: {
       AtomicRMWInst::BinOp Op =

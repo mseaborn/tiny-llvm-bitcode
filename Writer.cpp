@@ -58,6 +58,10 @@ void WriteType(OutputStream *Stream, Type *Ty) {
   Stream->writeInt(TypeVal, "type");
 }
 
+void WriteAlignmentVal(OutputStream *Stream, uint32_t Alignment) {
+  Stream->writeInt(Log2_32(Alignment) + 1, "align");
+}
+
 void WriteBytes(OutputStream *Stream, const uint8_t *Data, uint32_t Size) {
   // TODO: Write bulk data more efficiently than this.
   for (unsigned I = 0; I < Size; ++I)
@@ -263,17 +267,19 @@ void FunctionWriter::writeInstruction(Instruction *Inst) {
       break;
     }
     case Instruction::Load: {
-      // TODO: Handle "align", "volatile" and atomic attributes.
+      // TODO: Handle "volatile" and atomic attributes.
       LoadInst *Load = cast<LoadInst>(Inst);
       Stream->writeInt(Opcodes::INST_LOAD, "opcode");
       WriteType(Stream, Load->getType());
+      WriteAlignmentVal(Stream, Load->getAlignment());
       writeOperand(Load->getPointerOperand());
       break;
     }
     case Instruction::Store: {
-      // TODO: Handle "align", "volatile" and atomic attributes.
+      // TODO: Handle "volatile" and atomic attributes.
       StoreInst *Store = cast<StoreInst>(Inst);
       Stream->writeInt(Opcodes::INST_STORE, "opcode");
+      WriteAlignmentVal(Stream, Store->getAlignment());
       writeOperand(Store->getOperand(0));
       writeOperand(Store->getOperand(1));
       break;
